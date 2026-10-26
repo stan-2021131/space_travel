@@ -1,0 +1,8 @@
+[package]
+name = "space_travel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+raylib = "6.0"
+tobj = "4.0.5"
