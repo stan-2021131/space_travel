@@ -1,5 +1,8 @@
+use crate::material::Material;
 use crate::math::{Transform, Vec2, Vec3};
+use crate::texture::CpuTexture;
 use std::path::Path;
+use std::sync::Arc;
 
 /// Vértice individual con atributos geométricos.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,7 +69,7 @@ impl AABB {
     }
 }
 
-/// Malla 3D indexada con vértices e índices.
+/// Malla 3D indexada con vértices, índices y material asociado.
 ///
 /// Conserva las posiciones originales inalteradas.
 #[derive(Debug, Clone)]
@@ -74,16 +77,22 @@ pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub aabb: AABB,
+    pub material: Material,
 }
 
 impl Mesh {
     pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
+        Self::with_material(vertices, indices, Material::default_diffuse())
+    }
+
+    pub fn with_material(vertices: Vec<Vertex>, indices: Vec<u32>, material: Material) -> Self {
         let positions: Vec<Vec3> = vertices.iter().map(|v| v.position).collect();
         let aabb = AABB::from_points(&positions);
         Self {
             vertices,
             indices,
             aabb,
+            material,
         }
     }
 
@@ -93,6 +102,19 @@ impl Mesh {
 
     pub fn vertex_count(&self) -> usize {
         self.vertices.len()
+    }
+
+    /// Calcula la distancia euclidiana máxima de cualquier vértice al centro geométrico del AABB.
+    pub fn geometric_radius(&self) -> f32 {
+        let center = self.aabb.center();
+        let mut max_dist_sq: f32 = 0.0;
+        for v in &self.vertices {
+            let dist_sq = (v.position - center).length_squared();
+            if dist_sq > max_dist_sq {
+                max_dist_sq = dist_sq;
+            }
+        }
+        max_dist_sq.sqrt()
     }
 
     /// Calcula una transformación de preview para centrar el modelo en el origen y
@@ -108,13 +130,13 @@ impl Mesh {
         };
 
         Transform {
-            position: -center * scale, // Centra el modelo en el origen tras el escalado
+            position: -center * scale,
             rotation: Vec3::zero(),
             scale: Vec3::new(scale, scale, scale),
         }
     }
 
-    /// Carga un archivo OBJ mediante la biblioteca `tobj`.
+    /// Carga un archivo OBJ mediante la biblioteca `tobj`, asociando su archivo MTL y textura si están declarados.
     ///
     /// Realiza triangulación de caras y valida que contenga geometría triangular utilizable.
     pub fn load_from_obj(path: &Path) -> Result<Self, String> {
@@ -125,7 +147,7 @@ impl Mesh {
         };
 
         let obj = tobj::load_obj(path, &load_options);
-        let (models, _materials) =
+        let (models, materials_res) =
             obj.map_err(|e| format!("Error al cargar OBJ {:?}: {}", path, e))?;
 
         if models.is_empty() {
@@ -134,10 +156,15 @@ impl Mesh {
 
         let mut all_vertices: Vec<Vertex> = Vec::new();
         let mut all_indices: Vec<u32> = Vec::new();
+        let mut primary_mat_id: Option<usize> = None;
 
         for model in &models {
             let mesh = &model.mesh;
             let index_offset = all_vertices.len() as u32;
+
+            if primary_mat_id.is_none() {
+                primary_mat_id = mesh.material_id;
+            }
 
             let num_positions = mesh.positions.len() / 3;
             if num_positions == 0 {
@@ -201,9 +228,46 @@ impl Mesh {
             ));
         }
 
-        // Si el modelo carecía de normales originales en OBJ, se utiliza Vec3::up() como respaldo seguro
-        let mesh_result = Self::new(all_vertices, all_indices);
+        // Carga y resolución del material asociado
+        let material = if let (Ok(materials), Some(mat_id)) = (materials_res, primary_mat_id) {
+            if let Some(tmat) = materials.get(mat_id) {
+                let texture = if let Some(ref tex_file) = tmat.diffuse_texture {
+                    let parent_dir = path.parent().unwrap_or(Path::new(""));
+                    let tex_path = parent_dir.join(tex_file);
+                    match CpuTexture::load_from_file(&tex_path) {
+                        Ok(tex) => Some(Arc::new(tex)),
+                        Err(e) => {
+                            eprintln!(
+                                "[WARN] No se pudo cargar textura '{}' referenciada en MTL: {}",
+                                tex_path.display(),
+                                e
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
 
-        Ok(mesh_result)
+                // Si la malla cuenta con mapa de textura difuso, se utiliza Kd unitario para
+                // no atenuar ni distorsionar los colores de la textura con valores de interfaz residuales.
+                let kd = if texture.is_some() {
+                    Vec3::one()
+                } else {
+                    match tmat.diffuse {
+                        Some(diff) => Vec3::new(diff[0], diff[1], diff[2]),
+                        None => Vec3::one(),
+                    }
+                };
+
+                Material::new(&tmat.name, kd, texture)
+            } else {
+                Material::default_diffuse()
+            }
+        } else {
+            Material::default_diffuse()
+        };
+
+        Ok(Self::with_material(all_vertices, all_indices, material))
     }
 }

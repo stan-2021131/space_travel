@@ -3,13 +3,15 @@ pub mod rasterizer;
 pub mod shader;
 
 use crate::buffer::{DepthBuffer, Framebuffer};
+use crate::material::Material;
 use crate::math::Mat4;
 use crate::mesh::Mesh;
 use crate::stats::FrameStats;
 use clipping::{ClipTriangle, ClipVertex, ClippedTriangles, clip_triangle_near_plane};
 pub use rasterizer::{VertexOut, is_front_facing, rasterize_triangle};
 pub use shader::{
-    DepthDebugShader, DiffuseShader, FragmentInput, FragmentShader, NormalsDebugShader, ShaderMode,
+    DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput, FragmentShader,
+    NormalsDebugShader, ShaderMode, TexturedDiffuseShader,
 };
 
 /// Renderizador 3D por software ejecutado íntegramente en CPU.
@@ -27,6 +29,7 @@ pub struct RenderContext<'a, S: FragmentShader> {
     pub model_matrix: &'a Mat4,
     pub rotation_matrix: &'a Mat4,
     pub view_proj_matrix: &'a Mat4,
+    pub material: &'a Material,
     pub shader: &'a S,
 }
 
@@ -72,8 +75,7 @@ impl SoftwareRenderer {
             let world_pos = ctx.model_matrix.transform_point(local_pos);
 
             // Transformación de la normal:
-            // NOTA OBLIGATORIA: Para el preview se utiliza únicamente rotación y normalización
-            // porque la escala inicial es uniforme. (Limitación documentada según instrucción).
+            // NOTA: Para modelos con escala uniforme se utiliza únicamente rotación y normalización.
             let world_normal = ctx
                 .rotation_matrix
                 .transform_direction(v.normal)
@@ -106,16 +108,34 @@ impl SoftwareRenderer {
                 }
                 ClippedTriangles::One(t) => {
                     self.process_and_rasterize_triangle(
-                        &t, width, height, target, ctx.shader, stats,
+                        &t,
+                        width,
+                        height,
+                        target,
+                        ctx.material,
+                        ctx.shader,
+                        stats,
                     );
                 }
                 ClippedTriangles::Two(t1, t2) => {
                     stats.triangulos_generados_clipping += 1;
                     self.process_and_rasterize_triangle(
-                        &t1, width, height, target, ctx.shader, stats,
+                        &t1,
+                        width,
+                        height,
+                        target,
+                        ctx.material,
+                        ctx.shader,
+                        stats,
                     );
                     self.process_and_rasterize_triangle(
-                        &t2, width, height, target, ctx.shader, stats,
+                        &t2,
+                        width,
+                        height,
+                        target,
+                        ctx.material,
+                        ctx.shader,
+                        stats,
                     );
                 }
             }
@@ -123,12 +143,14 @@ impl SoftwareRenderer {
     }
 
     /// Realiza división de perspectiva, conversión al viewport, backface culling y rasterización.
+    #[allow(clippy::too_many_arguments)]
     fn process_and_rasterize_triangle<S: FragmentShader>(
         &self,
         tri: &ClipTriangle,
         width: f32,
         height: f32,
         target: &mut RenderTarget<'_>,
+        material: &Material,
         shader: &S,
         stats: &mut FrameStats,
     ) {
@@ -150,6 +172,7 @@ impl SoftwareRenderer {
             &vo2,
             target.framebuffer,
             target.depth_buffer,
+            material,
             shader,
             stats,
         );

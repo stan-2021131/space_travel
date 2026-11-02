@@ -1,4 +1,5 @@
 use crate::buffer::{DepthBuffer, Framebuffer};
+use crate::material::Material;
 use crate::math::{Vec2, Vec3, Vec4};
 use crate::pipeline::clipping::ClipVertex;
 use crate::pipeline::shader::{FragmentInput, FragmentShader};
@@ -87,17 +88,17 @@ pub fn calculate_barycentric_2d(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> Option<(f
 }
 
 /// Rasteriza un triángulo en CPU con prueba de profundidad e interpolación con corrección de perspectiva.
+#[allow(clippy::too_many_arguments)]
 pub fn rasterize_triangle<S: FragmentShader>(
     v0: &VertexOut,
     v1: &VertexOut,
     v2: &VertexOut,
     framebuffer: &mut Framebuffer,
     depth_buffer: &mut DepthBuffer,
+    material: &Material,
     shader: &S,
     stats: &mut FrameStats,
 ) {
-    stats.triangulos_rasterizados += 1;
-
     // Bounding Box 2D recortado contra los límites del framebuffer
     let raw_min_x = v0
         .screen_pos
@@ -139,6 +140,8 @@ pub fn rasterize_triangle<S: FragmentShader>(
     if min_x > max_x || min_y > max_y {
         return;
     }
+
+    stats.triangulos_rasterizados += 1;
 
     // Rasterización píxel por píxel con muestreo en el centro (x + 0.5, y + 0.5)
     for y in min_y..=max_y {
@@ -187,6 +190,7 @@ pub fn rasterize_triangle<S: FragmentShader>(
                 world_normal: normal.normalize(),
                 uv,
                 barycentric: Vec3::new(w0, w1, w2),
+                material,
             };
 
             // 4. Ejecución del shader de fragmentos en CPU

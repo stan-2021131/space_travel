@@ -1,4 +1,59 @@
+use crate::pipeline::ShaderMode;
 use std::time::Instant;
+
+/// Modos de presentación de estadísticas en consola controlados mediante la tecla F3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StatsDisplayMode {
+    Off,
+    #[default]
+    Compact,
+    Detailed,
+}
+
+impl StatsDisplayMode {
+    pub fn cycle(&self) -> Self {
+        match self {
+            Self::Off => Self::Compact,
+            Self::Compact => Self::Detailed,
+            Self::Detailed => Self::Off,
+        }
+    }
+}
+
+/// Administrador de controles diagnósticos para garantizar el aislamiento de teclas:
+/// F2 (modo de shader), F3 (modo de estadísticas) y D (exclusivamente navegación).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiagnosticControls {
+    pub shader_mode: ShaderMode,
+    pub stats_mode: StatsDisplayMode,
+}
+
+impl Default for DiagnosticControls {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DiagnosticControls {
+    pub fn new() -> Self {
+        Self {
+            shader_mode: ShaderMode::Normal,
+            stats_mode: StatsDisplayMode::Compact,
+        }
+    }
+
+    /// Maneja eventos de teclado de diagnóstico.
+    /// F2 alterna modo de shader, F3 alterna estadísticas, D no altera diagnósticos.
+    pub fn handle_key_action(&mut self, is_f2: bool, is_f3: bool, is_d: bool) {
+        let _ = is_d; // D es exclusivamente para navegación de la nave (yaw_right)
+        if is_f2 {
+            self.shader_mode = self.shader_mode.cycle();
+        }
+        if is_f3 {
+            self.stats_mode = self.stats_mode.cycle();
+        }
+    }
+}
 
 /// Contadores y métricas de rendimiento del software renderer por cuadro y acumuladas.
 #[derive(Debug, Clone, Copy, Default)]
@@ -27,6 +82,7 @@ pub struct StatsTracker {
     last_print_time: Instant,
     frame_count: usize,
     accumulated: FrameStats,
+    pub display_mode: StatsDisplayMode,
 }
 
 impl StatsTracker {
@@ -35,11 +91,27 @@ impl StatsTracker {
             last_print_time: Instant::now(),
             frame_count: 0,
             accumulated: FrameStats::default(),
+            display_mode: StatsDisplayMode::Compact,
         }
     }
 
+    /// Alterna el modo de visualización de estadísticas (Off -> Compact -> Detailed -> Off).
+    pub fn cycle_mode(&mut self) {
+        self.display_mode = self.display_mode.cycle();
+        println!(
+            "[STATS] Modo de estadísticas cambiado a: {:?}",
+            self.display_mode
+        );
+    }
+
     /// Registra las estadísticas de un cuadro renderizado y las reporta en consola si ha transcurrido un segundo.
-    pub fn record_frame(&mut self, current: FrameStats) {
+    pub fn record_frame(
+        &mut self,
+        current: FrameStats,
+        ship_speed_wu: f32,
+        nearest_body_name: &str,
+        surface_dist_wu: f32,
+    ) {
         self.frame_count += 1;
         self.accumulated.modelos_procesados += current.modelos_procesados;
         self.accumulated.vertices_procesados += current.vertices_procesados;
@@ -54,32 +126,54 @@ impl StatsTracker {
 
         let elapsed = self.last_print_time.elapsed().as_secs_f32();
         if elapsed >= 1.0 {
-            let fps = self.frame_count as f32 / elapsed;
-            let avg_frame_time = self.accumulated.frame_time_ms / self.frame_count.max(1) as f32;
-            let avg_in_tris = self.accumulated.triangulos_entrada / self.frame_count.max(1);
-            let avg_clip_gen =
-                self.accumulated.triangulos_generados_clipping / self.frame_count.max(1);
-            let avg_clip_disc =
-                self.accumulated.triangulos_descartados_clipping / self.frame_count.max(1);
-            let avg_backface_disc =
-                self.accumulated.triangulos_descartados_backface / self.frame_count.max(1);
-            let avg_rast_tris = self.accumulated.triangulos_rasterizados / self.frame_count.max(1);
-            let avg_eval_frags = self.accumulated.fragmentos_evaluados / self.frame_count.max(1);
-            let avg_depth_frags =
-                self.accumulated.fragmentos_aceptados_depth / self.frame_count.max(1);
+            if self.display_mode != StatsDisplayMode::Off {
+                let count = self.frame_count.max(1);
+                let fps = self.frame_count as f32 / elapsed;
+                let avg_frame_time = self.accumulated.frame_time_ms / count as f32;
+                let avg_models = self.accumulated.modelos_procesados / count;
+                let avg_in_tris = self.accumulated.triangulos_entrada / count;
+                let avg_clip_gen = self.accumulated.triangulos_generados_clipping / count;
+                let avg_clip_disc = self.accumulated.triangulos_descartados_clipping / count;
+                let avg_backface_disc = self.accumulated.triangulos_descartados_backface / count;
+                let avg_rast_tris = self.accumulated.triangulos_rasterizados / count;
+                let avg_eval_frags = self.accumulated.fragmentos_evaluados / count;
+                let avg_depth_frags = self.accumulated.fragmentos_aceptados_depth / count;
 
-            println!(
-                "[STATS] FPS: {:5.1} | Frame: {:5.2} ms | Tris In: {:4} | Clip (+{:2}, -{:2}) | Backface -{:4} | Rast: {:4} | Frags: {:6} -> Depth: {:6}",
-                fps,
-                avg_frame_time,
-                avg_in_tris,
-                avg_clip_gen,
-                avg_clip_disc,
-                avg_backface_disc,
-                avg_rast_tris,
-                avg_eval_frags,
-                avg_depth_frags
-            );
+                match self.display_mode {
+                    StatsDisplayMode::Compact => {
+                        println!(
+                            "[{:2.0} FPS | {:4.1} ms] obj {} | tri {}→{} | nave {:4.1} WU/s | {} {:+5.1} WU",
+                            fps,
+                            avg_frame_time,
+                            avg_models,
+                            avg_in_tris,
+                            avg_rast_tris,
+                            ship_speed_wu,
+                            nearest_body_name,
+                            surface_dist_wu
+                        );
+                    }
+                    StatsDisplayMode::Detailed => {
+                        println!(
+                            "[STATS DETALLADO] FPS: {:5.1} | Frame: {:5.2} ms | Objs: {} | Tris In: {:4} | Clip (+{:2}, -{:2}) | Backface -{:4} | Rast: {:4} | Frags: {:6} -> Depth: {:6} | Nave: {:4.1} WU/s | Prox: {} ({:+5.1} WU)",
+                            fps,
+                            avg_frame_time,
+                            avg_models,
+                            avg_in_tris,
+                            avg_clip_gen,
+                            avg_clip_disc,
+                            avg_backface_disc,
+                            avg_rast_tris,
+                            avg_eval_frags,
+                            avg_depth_frags,
+                            ship_speed_wu,
+                            nearest_body_name,
+                            surface_dist_wu
+                        );
+                    }
+                    StatsDisplayMode::Off => {}
+                }
+            }
 
             self.last_print_time = Instant::now();
             self.frame_count = 0;
