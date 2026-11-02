@@ -1,6 +1,5 @@
 # Blender 5.2.2 LTS
 # www.blender.org
-mtllib nave.mtl
 o Cubo
 v -0.299677 -0.299677 -1.000000
 v -0.299677 0.299677 -1.000000

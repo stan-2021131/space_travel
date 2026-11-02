@@ -1,0 +1,48 @@
+[simulation]
+time_scale = 1.0
+fixed_timestep = 0.0166667
+max_frame_delta = 0.1
+
+[ship]
+model_path = "assets/models/nave.obj"
+target_length_wu = 1.0
+initial_position = [0.0, 0.0, 200.0]
+initial_rotation_deg = [0.0, 180.0, 0.0]
+acceleration = 14.0
+reverse_acceleration = 7.0
+braking_force = 12.0
+drag = 0.7
+max_speed = 28.0
+yaw_speed = 1.8
+pitch_speed = 1.5
+roll_speed = 2.0
+collision_radius = 0.6
+
+[camera]
+distance_behind = 3.5
+height_above = 1.2
+look_ahead = 6.0
+position_smoothing = 10.0
+rotation_smoothing = 8.0
+fov_deg = 50.0
+near_plane = 0.1
+far_plane = 500.0
+
+[sun]
+id = "sol"
+model_path = "assets/models/sun/sun.obj"
+radius = 30.0
+collision_margin = 1.0
+rotation_period = 120.0
+shader = "emissive"
+
+[[planets]]
+id = "rocoso"
+model_path = "assets/models/rocky/rocky.obj"
+radius = 15.0
+orbital_radius = 70.0
+orbital_period = 80.0
+rotation_period = 30.0
+initial_orbital_angle_deg = 0.0
+collision_margin = 1.0
+shader = "textured_diffuse"
