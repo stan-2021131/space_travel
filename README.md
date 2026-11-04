@@ -103,7 +103,7 @@ cargo fmt --check
 # Análisis estático sin advertencias
 cargo clippy --all-targets
 
-# Suite completa de pruebas automatizadas (36 pruebas divididas modularmente en tests/)
+# Suite completa de pruebas automatizadas (42 pruebas divididas modularmente en tests/)
 cargo test
 ```
 
@@ -124,7 +124,7 @@ cargo run --release
 | `Flecha Arriba` / `Flecha Abajo` | Cabeceo (*Pitch*) hacia arriba / abajo. |
 | `Q` / `E` | Alabeo (*Roll*) a la izquierda / derecha. |
 | `R` | Reiniciar posición, orientación y velocidad de la nave a los valores iniciales. |
-| `F2` | Alternar modo de shader CPU: **Normal** $\to$ **Depuración de Profundidad (Depth Debug)** $\to$ **Depuración de Normales (Normals Debug)**. |
+| `F2` | Alternar modo de shader CPU: **Normal** $\to$ **Toon (Anime Cel-Shading)** $\to$ **Depuración de Profundidad (Depth Debug)** $\to$ **Depuración de Normales (Normals Debug)**. |
 | `F3` | Alternar reporte de métricas en consola: **Compacto** $\to$ **Detallado** $\to$ **Desactivado (Off)**. |
 | `Escape` | Cerrar la aplicación. |
 
@@ -148,13 +148,12 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 10. Pruebas Automatizadas
 
-El proyecto cuenta con 36 pruebas unitarias deterministas sin ventana que validan todas las etapas del motor:
-- **Matemáticas 3D**: Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
-- **Pipeline de Renderizado**: Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, shader emisivo y shader con textura difusa.
-- **Carga de Recursos y Materiales**: Integridad de todos los modelos OBJ (`nave.obj`, `sun.obj`, `rocky.obj`), lectura de MTL, y carga y mapeo de `rocky.png`.
-- **Mapeo de Texturas**: Comportamiento de repetición en $U$, clamp en $V$, e inversión vertical de filas.
-- **Física y Dinámica**: Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial y robustez ante centros coincidentes.
-- **Configuración**: Carga y validación exhaustiva de `solar_system.toml` con rechazo de parámetros no finitos, duplicados o radios negativos.
+El proyecto cuenta con 42 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
+- **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
+- **Pipeline de Renderizado** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, proyección al viewport y descarte.
+- **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista (verificando determinismo estricto con `seed = 67`, varianza con semillas distintas y rotación solidaria con el planeta), shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`) con rotación 3D dependiente de la orientación de cámara y determinismo de semilla, y shader de nave espacial (`ShipShader`) con luz física solar dinámica, brillo especular metálico Blinn-Phong y emisión base ambiental de seguridad.
+- **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
+- **Configuración y Diagnósticos** (`config_and_diagnostic_tests.rs`): Carga y validación exhaustiva de `solar_system.toml` con semilla universal, rechazo de parámetros no finitos o duplicados, y ciclado de modos diagnósticos con `F2` y `F3`.
 
 ---
 
@@ -163,11 +162,13 @@ El proyecto cuenta con 36 pruebas unitarias deterministas sin ventana que valida
 - **Herramienta**: Asistente de IA (Antigravity).
 - **Intervenciones**:
   - Propuesta arquitectónica modular y diseño de estructuras conforme a `AGENTS.md`.
-  - Implementación del cargador de materiales MTL y decodificación de texturas CPU (`material.rs`, `texture.rs`).
-  - Implementación del modelo cinemático de inercia y colisión inelástica con deslizamiento tangencial (`physics.rs`).
-  - Implementación de la cámara de persecución con amortiguación exponencial (`camera.rs`).
-  - Implementación de shaders de fragmentos CPU emisivo y con textura (`shader.rs`).
-  - Batería de pruebas unitarias deterministas y documentación técnica.
+  - Implementación del módulo de shaders desacoplados (`src/pipeline/shaders/`).
+  - Implementación del shader de plasma solar animado con tiempo (`PlasmaShader`).
+  - Implementación del shader procedural de superficie rocosa con semilla universal y rotación axial solidaria (`ProceduralRockShader`).
+  - Implementación del shader universal de cel-shading estilo anime (`ToonShader`).
+  - Implementación del shader procedural de fondo cósmico estelar y nebulosas en CPU (`SkyShader`).
+  - Implementación del shader de fuselaje metálico para la nave espacial con iluminación solar real (`ShipShader`).
+  - Batería de 42 pruebas deterministas modulares y documentación técnica.
 
 ---
 
@@ -177,21 +178,21 @@ El proyecto cuenta con 36 pruebas unitarias deterministas sin ventana que valida
 |---|---|:---:|:---:|---|
 | **Base Habilitante** | Renderer 3D propio en CPU (Sin funciones 3D de Raylib) | Requisito | 0 | Implementado y Validado |
 | **Base Habilitante** | Carga y dibujo con MVP, Z-Buffer y Shader en CPU | Requisito | 0 | Implementado y Validado |
-| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **0** | Candidato Fase 1 (10 pts candidato) |
+| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **0** | Candidato (10 pts candidato) |
 | **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **0** | No iniciado |
 | **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **0** | No iniciado |
 | **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **0** | No iniciado |
-| **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **0** | No iniciado |
-| **Renderizado** | Shader animado cuyo efecto cambia con el tiempo | 8 | **0** | No iniciado |
+| **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **0** | Candidato: `ProceduralRockShader` + `ToonShader` + `ShipShader` (18 pts candidato) |
+| **Renderizado** | Shader animado cuyo efecto cambia con el tiempo | 8 | **0** | Candidato: `PlasmaShader` (8 pts candidato) |
 | **Renderizado** | Mapeo de normales en renderer por software | 8 | **0** | No iniciado |
 | **Renderizado** | Deformación de geometría mediante ruido u otra función | 10 | **0** | No iniciado |
 | **Renderizado** | Generación o subdivisión procedural de geometría previa a rasterizar | 10 | **0** | No iniciado |
 | **Navegación** | Modo de control local para rodear planeta cercano | 8 | **0** | No iniciado |
-| **Navegación** | Aceleración, frenado y giro progresivos | 8 | **0** | Candidato Fase 1 (8 pts candidato) |
+| **Navegación** | Aceleración, frenado y giro progresivos | 8 | **0** | Candidato (8 pts candidato) |
 | **Navegación** | Atracción gravitatoria de planetas | 10 | **0** | No iniciado |
-| **Navegación** | Colisión básica que impide atravesar planetas | 4 | **0** | Candidato Fase 1 (4 pts candidato) |
+| **Navegación** | Colisión básica que impide atravesar planetas | 4 | **0** | Candidato (4 pts candidato) |
 | **Rendimiento** | Descarte de objetos fuera de la vista (Frustum Culling) | 7 | **0** | No iniciado |
-| **Rendimiento** | Niveles de detalle (LOD) según distancia | 8 | **0** | No iniciado |
+| **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0** | No iniciado |
 | **Presentación** | Coherencia visual y composición de la escena | 5 | **0** | No iniciado |
 | **Presentación** | Claridad de la experiencia y controles | 5 | **0** | No iniciado |
-| **TOTAL** | | **200 (Máx. 100)** | **0** | **Base Fase 1 (22 pts candidatos pendientes de evaluación final)** |
+| **TOTAL** | | **200 (Máx. 100)** | **0** | **Base Fase 1 + Shaders Propios (48 pts candidatos pendientes de evaluación final)** |
