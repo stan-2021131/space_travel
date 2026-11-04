@@ -10,7 +10,13 @@ use crate::pipeline::{
     RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
     TexturedDiffuseShader, ToonShader,
 };
-use crate::scene::CelestialBody;
+use crate::scene::{
+    CelestialBody,
+    surface::{
+        SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
+        generate_spherical_distribution,
+    },
+};
 use crate::stats::{FrameStats, StatsTracker};
 use raylib::prelude::*;
 use std::path::Path;
@@ -95,6 +101,7 @@ impl App {
             position: Vec3::zero(),
             rotation_rad: 0.0,
             shader_type: config.sun.shader.clone(),
+            surface_groups: Vec::new(),
         };
 
         let mut planets = Vec::new();
@@ -106,6 +113,31 @@ impl App {
             let p_mesh = Arc::new(Mesh::load_from_obj(Path::new(&p_cfg.model_path))?);
             let p_geo_radius = p_mesh.geometric_radius().max(1e-4);
             let p_scale = p_cfg.radius / p_geo_radius;
+
+            let mut surface_groups = Vec::new();
+            for s_cfg in &p_cfg.surface_objects {
+                println!(
+                    "[RECURSOS] Cargando objeto de superficie '{}' para planeta '{}': {}",
+                    s_cfg.name, p_cfg.id, s_cfg.model_path
+                );
+                let s_mesh = Arc::new(Mesh::load_from_obj(Path::new(&s_cfg.model_path))?);
+                let embedding =
+                    calculate_surface_embedding(p_cfg.radius, &s_mesh.aabb, s_cfg.scale);
+                let effective_radius = (p_cfg.radius - embedding).max(1.0);
+                let instances = generate_spherical_distribution(
+                    config.simulation.seed,
+                    s_cfg.count,
+                    effective_radius,
+                    s_cfg.scale,
+                );
+                surface_groups.push(SurfaceGroup::new(
+                    s_cfg.name.clone(),
+                    s_mesh,
+                    instances,
+                    s_cfg.max_distance,
+                    s_cfg.fade_range,
+                ));
+            }
 
             planets.push(CelestialBody {
                 id: p_cfg.id.clone(),
@@ -121,6 +153,7 @@ impl App {
                 position: Vec3::new(p_cfg.orbital_radius, 0.0, 0.0),
                 rotation_rad: 0.0,
                 shader_type: p_cfg.shader.clone(),
+                surface_groups,
             });
         }
 
@@ -449,6 +482,63 @@ impl App {
                     &mut target,
                     stats,
                 );
+            }
+
+            // 2.1 Objetos de superficie del planeta (con descarte por distancia, transición suave y horizonte)
+            for group in &planet.surface_groups {
+                let dist_to_planet_center = (self.camera.eye - planet.position).length();
+                let dist_to_surface = (dist_to_planet_center - planet.radius).max(0.0);
+
+                // Descarte lejano O(1): si la cámara está fuera del radio de visibilidad, omitir todo el grupo
+                if dist_to_surface >= group.max_distance {
+                    continue;
+                }
+
+                let fade =
+                    calculate_fade_factor(dist_to_surface, group.max_distance, group.fade_range);
+                if fade <= 1e-4 {
+                    continue;
+                }
+
+                let p_rot = planet.rotation_matrix();
+                let p_trans = Mat4::from_translation(planet.position);
+
+                for instance in &group.instances {
+                    // Descarte de horizonte a media/larga distancia desde el centro del planeta.
+                    // En proximidad cercana (dist_to_surface <= 35.0) se desactiva para que ningún
+                    // objeto visible o en el horizonte cercano desaparezca prematuramente.
+                    if dist_to_surface > 35.0 {
+                        let world_normal = p_rot.transform_direction(instance.local_normal);
+                        let to_cam_from_center = self.camera.eye - planet.position;
+                        if world_normal.dot(to_cam_from_center) < -0.1 {
+                            continue;
+                        }
+                    }
+
+                    let current_scale = instance.base_scale * fade;
+                    let obj_model = p_trans
+                        * p_rot
+                        * Mat4::from_translation(instance.local_pos)
+                        * instance.local_basis
+                        * Mat4::uniform_scaling(current_scale);
+                    let obj_rot = p_rot * instance.local_basis;
+
+                    Self::draw_mesh(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.planet_shader,
+                        &group.mesh,
+                        &obj_model,
+                        &obj_rot,
+                        &vp_matrix,
+                        &group.mesh.material,
+                        &mut target,
+                        stats,
+                    );
+                }
             }
         }
 

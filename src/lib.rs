@@ -24,6 +24,11 @@ pub use pipeline::{
     NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget,
     ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
-pub use scene::CelestialBody;
+pub use scene::{
+    CelestialBody,
+    surface::{
+        SurfaceGroup, SurfaceInstance, calculate_surface_embedding, generate_spherical_distribution,
+    },
+};
 pub use stats::{DiagnosticControls, FrameStats, StatsDisplayMode, StatsTracker};
 pub use texture::CpuTexture;

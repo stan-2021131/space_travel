@@ -66,6 +66,36 @@ pub struct SunConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct SurfaceObjectConfig {
+    pub name: String,
+    pub model_path: String,
+    #[serde(default = "default_surface_count")]
+    pub count: usize,
+    #[serde(default = "default_surface_scale")]
+    pub scale: f32,
+    #[serde(default = "default_surface_max_distance")]
+    pub max_distance: f32,
+    #[serde(default = "default_surface_fade_range")]
+    pub fade_range: f32,
+}
+
+fn default_surface_count() -> usize {
+    6
+}
+
+fn default_surface_scale() -> f32 {
+    0.035
+}
+
+fn default_surface_max_distance() -> f32 {
+    55.0
+}
+
+fn default_surface_fade_range() -> f32 {
+    15.0
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct PlanetConfig {
     pub id: String,
     pub model_path: String,
@@ -76,6 +106,8 @@ pub struct PlanetConfig {
     pub initial_orbital_angle_deg: f32,
     pub collision_margin: f32,
     pub shader: String,
+    #[serde(default)]
+    pub surface_objects: Vec<SurfaceObjectConfig>,
 }
 
 impl AppConfig {
@@ -155,6 +187,24 @@ impl AppConfig {
                     "[{}] ID duplicado en configuración: '{}'",
                     p, planet.id
                 ));
+            }
+            for obj in &planet.surface_objects {
+                if obj.count == 0
+                    || obj.scale <= 0.0
+                    || obj.max_distance <= 0.0
+                    || obj.fade_range <= 0.0
+                {
+                    return Err(format!(
+                        "[{}] Parámetros de objeto de superficie '{}' en planeta '{}' deben ser positivos",
+                        p, obj.name, planet.id
+                    ));
+                }
+                if obj.fade_range >= obj.max_distance {
+                    return Err(format!(
+                        "[{}] En objeto de superficie '{}' del planeta '{}': fade_range ({}) debe ser menor que max_distance ({})",
+                        p, obj.name, planet.id, obj.fade_range, obj.max_distance
+                    ));
+                }
             }
         }
 

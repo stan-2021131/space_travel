@@ -142,6 +142,7 @@ fn test_orbital_mechanics_deterministic() {
         position: Vec3::zero(),
         rotation_rad: 0.0,
         shader_type: "textured_diffuse".to_string(),
+        surface_groups: Vec::new(),
     };
 
     // t = 0: (R, 0, 0)
@@ -180,6 +181,7 @@ fn test_celestial_body_model_and_rotation_matrices() {
         position: Vec3::zero(),
         rotation_rad: 0.0,
         shader_type: "textured_diffuse".to_string(),
+        surface_groups: Vec::new(),
     };
 
     // Actualizar a t = 10s (rotación axial de 90°: TAU / 4)

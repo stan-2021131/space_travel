@@ -3,6 +3,9 @@ use crate::math::{Mat4, Vec3};
 use crate::mesh::Mesh;
 use std::sync::Arc;
 
+pub mod surface;
+pub use surface::{SurfaceGroup, SurfaceInstance, calculate_surface_embedding};
+
 /// Representa un cuerpo celeste (Sol o Planeta) en la simulación orbital.
 #[derive(Debug, Clone)]
 pub struct CelestialBody {
@@ -19,6 +22,7 @@ pub struct CelestialBody {
     pub position: Vec3,
     pub rotation_rad: f32,
     pub shader_type: String,
+    pub surface_groups: Vec<SurfaceGroup>,
 }
 
 impl CelestialBody {

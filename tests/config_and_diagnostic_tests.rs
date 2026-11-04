@@ -57,6 +57,14 @@ fn test_invalid_configuration_rejections() {
     let mut bad_cam = valid.clone();
     bad_cam.camera.position_smoothing = 0.0;
     assert!(bad_cam.validate(Path::new("test.toml")).is_err());
+
+    // Objeto de superficie con fade_range >= max_distance
+    if !valid.planets.is_empty() && !valid.planets[0].surface_objects.is_empty() {
+        let mut bad_surface = valid.clone();
+        bad_surface.planets[0].surface_objects[0].max_distance = 50.0;
+        bad_surface.planets[0].surface_objects[0].fade_range = 60.0;
+        assert!(bad_surface.validate(Path::new("test.toml")).is_err());
+    }
 }
 
 #[test]

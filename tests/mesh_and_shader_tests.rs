@@ -101,8 +101,8 @@ fn test_procedural_rock_shader_axial_rotation() {
     };
     let col_p0 = shader_r0.shade(&input_p0);
 
-    // Estado 2: Planeta rotado 90° (rotation_rad = PI/2), evaluando el punto rotado en (0, 0, 10)
-    let mut shader_r90 = ProceduralRockShader::new(67, Vec3::new(0.0, 0.0, 50.0));
+    // Estado 2: Planeta rotado 90° (rotation_rad = PI/2), evaluando el punto rotado en (0, 0, -10)
+    let mut shader_r90 = ProceduralRockShader::new(67, Vec3::new(0.0, 0.0, -50.0));
     shader_r90.rotation_rad = std::f32::consts::FRAC_PI_2;
     shader_r90.ambient_intensity = 1.0;
 
@@ -110,8 +110,8 @@ fn test_procedural_rock_shader_axial_rotation() {
         screen_x: 0,
         screen_y: 0,
         depth_ndc: 0.0,
-        world_pos: Vec3::new(0.0, 0.0, 10.0),
-        world_normal: Vec3::new(0.0, 0.0, 1.0),
+        world_pos: Vec3::new(0.0, 0.0, -10.0),
+        world_normal: Vec3::new(0.0, 0.0, -1.0),
         uv: Vec2::zero(),
         barycentric: Vec3::new(1.0, 0.0, 0.0),
         material: &mat,

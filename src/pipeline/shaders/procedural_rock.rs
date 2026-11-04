@@ -84,9 +84,9 @@ impl FragmentShader for ProceduralRockShader {
         };
 
         // Rotación axial inversa para que las coordenadas de ruido giren solidariamente con el planeta
-        let cos_r = (-self.rotation_rad).cos();
-        let sin_r = (-self.rotation_rad).sin();
-        let local_n = Vec3::new(n.x * cos_r - n.z * sin_r, n.y, n.x * sin_r + n.z * cos_r);
+        let cos_r = self.rotation_rad.cos();
+        let sin_r = self.rotation_rad.sin();
+        let local_n = Vec3::new(cos_r * n.x - sin_r * n.z, n.y, sin_r * n.x + cos_r * n.z);
 
         // 1. Manchas continentales y mares basálticos oscuros (baja frecuencia)
         let maria = Self::value_noise(local_n * 2.8, self.seed);
