@@ -1,4 +1,5 @@
 [simulation]
+seed = 67
 time_scale = 1.0
 fixed_timestep = 0.0166667
 max_frame_delta = 0.1
@@ -34,15 +35,15 @@ model_path = "assets/models/sun/sun.obj"
 radius = 30.0
 collision_margin = 1.0
 rotation_period = 120.0
-shader = "emissive"
+shader = "plasma"
 
 [[planets]]
 id = "rocoso"
 model_path = "assets/models/rocky/rocky.obj"
 radius = 15.0
-orbital_radius = 70.0
+orbital_radius = 90.0
 orbital_period = 80.0
 rotation_period = 30.0
 initial_orbital_angle_deg = 0.0
 collision_margin = 1.0
-shader = "textured_diffuse"
+shader = "procedural_rock"

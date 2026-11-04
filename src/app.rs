@@ -1,4 +1,4 @@
-use crate::buffer::{Color, DepthBuffer, Framebuffer};
+use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::camera::Camera;
 use crate::config::AppConfig;
 use crate::material::Material;
@@ -6,8 +6,9 @@ use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
 use crate::physics::{ShipInput, ShipState};
 use crate::pipeline::{
-    DepthDebugShader, DiffuseShader, EmissiveShader, FragmentShader, NormalsDebugShader,
-    RenderContext, RenderTarget, ShaderMode, SoftwareRenderer, TexturedDiffuseShader,
+    DepthDebugShader, FragmentShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
+    RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
+    TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::CelestialBody;
 use crate::stats::{FrameStats, StatsTracker};
@@ -40,8 +41,11 @@ pub struct App {
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
-    sun_shader: EmissiveShader,
-    ship_shader: DiffuseShader,
+    rock_shader: ProceduralRockShader,
+    plasma_shader: PlasmaShader,
+    ship_shader: ShipShader,
+    toon_shader: ToonShader,
+    sky_shader: SkyShader,
     depth_shader: DepthDebugShader,
     normals_shader: NormalsDebugShader,
 
@@ -148,6 +152,12 @@ impl App {
             config.camera.far_plane * 0.70,
         );
 
+        let rock_shader = ProceduralRockShader::new(config.simulation.seed, sun_body.position);
+        let plasma_shader = PlasmaShader::new();
+        let toon_shader = ToonShader::new(sun_body.position, camera.eye);
+        let ship_shader = ShipShader::new(sun_body.position, camera.eye);
+        let sky_shader = SkyShader::new(config.simulation.seed);
+
         Ok(Self {
             config,
             renderer: SoftwareRenderer::new(),
@@ -163,8 +173,11 @@ impl App {
             accumulator: 0.0,
             shader_mode: ShaderMode::Normal,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
-            sun_shader: EmissiveShader::new(1.0),
-            ship_shader: DiffuseShader::new(),
+            rock_shader,
+            plasma_shader,
+            ship_shader,
+            toon_shader,
+            sky_shader,
             depth_shader,
             normals_shader: NormalsDebugShader,
             stats_tracker: StatsTracker::new(),
@@ -205,7 +218,9 @@ impl App {
         println!("  [Flecha Abajo]   : Pitch abajo");
         println!("  [Q] / [E]        : Roll (Alabeo)");
         println!("  [R]              : Reiniciar posición y orientación de la nave");
-        println!("  [F2]             : Alternar modo de shader (Normal -> Depth -> Normals)");
+        println!(
+            "  [F2]             : Alternar modo de shader (Normal -> Toon -> Depth -> Normals)"
+        );
         println!(
             "  [F3]             : Alternar modo de estadísticas (Compacto -> Detallado -> Off)"
         );
@@ -320,6 +335,9 @@ impl App {
     pub fn update_simulation(&mut self, input: &ShipInput, dt: f32) {
         self.sim_time += dt;
 
+        // Actualización del tiempo para shaders animados
+        self.plasma_shader.set_time(self.sim_time);
+
         // Movimiento de la nave
         self.ship_state.update(input, &self.config.ship, dt);
 
@@ -349,24 +367,40 @@ impl App {
 
     /// Renderiza todos los cuerpos de la escena continua en el framebuffer propio en CPU.
     pub fn render_scene(&mut self, stats: &mut FrameStats) {
-        self.framebuffer.clear(Color::new(10, 10, 15, 255));
+        if self.shader_mode == ShaderMode::DepthDebug
+            || self.shader_mode == ShaderMode::NormalsDebug
+        {
+            self.framebuffer.clear(crate::buffer::Color::BLACK);
+        } else {
+            self.sky_shader.render(&mut self.framebuffer, &self.camera);
+        }
         self.depth_buffer.clear();
 
         let vp_matrix = self.camera.view_projection_matrix();
+        self.toon_shader.camera_pos = self.camera.eye;
+        self.toon_shader.light_pos = self.sun_body.position;
+        self.ship_shader.camera_pos = self.camera.eye;
+        self.ship_shader.light_pos = self.sun_body.position;
+        self.plasma_shader.sun_center = self.sun_body.position;
+        self.rock_shader.light_pos = self.sun_body.position;
+        self.planet_shader.light_pos = self.sun_body.position;
+
         let mut target = RenderTarget {
             framebuffer: &mut self.framebuffer,
             depth_buffer: &mut self.depth_buffer,
         };
 
-        // 1. Sol
+        // 1. Sol (Shader animado de plasma)
         let sun_model = self.sun_body.model_matrix();
         let sun_rot = self.sun_body.rotation_matrix();
+        self.toon_shader.is_sun = true;
         Self::draw_mesh(
             &mut self.renderer,
             self.shader_mode,
             &self.depth_shader,
             &self.normals_shader,
-            &self.sun_shader,
+            &self.toon_shader,
+            &self.plasma_shader,
             &self.sun_body.mesh,
             &sun_model,
             &sun_rot,
@@ -375,25 +409,47 @@ impl App {
             &mut target,
             stats,
         );
+        self.toon_shader.is_sun = false;
 
-        // 2. Planetas
+        // 2. Planetas (Shader procedural con semilla o textura)
         for planet in &self.planets {
             let p_model = planet.model_matrix();
             let p_rot = planet.rotation_matrix();
-            Self::draw_mesh(
-                &mut self.renderer,
-                self.shader_mode,
-                &self.depth_shader,
-                &self.normals_shader,
-                &self.planet_shader,
-                &planet.mesh,
-                &p_model,
-                &p_rot,
-                &vp_matrix,
-                &planet.material,
-                &mut target,
-                stats,
-            );
+            self.rock_shader.body_center = planet.position;
+            self.rock_shader.rotation_rad = planet.rotation_rad;
+            if planet.shader_type == "procedural_rock" {
+                Self::draw_mesh(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.rock_shader,
+                    &planet.mesh,
+                    &p_model,
+                    &p_rot,
+                    &vp_matrix,
+                    &planet.material,
+                    &mut target,
+                    stats,
+                );
+            } else {
+                Self::draw_mesh(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.planet_shader,
+                    &planet.mesh,
+                    &p_model,
+                    &p_rot,
+                    &vp_matrix,
+                    &planet.material,
+                    &mut target,
+                    stats,
+                );
+            }
         }
 
         // 3. Nave
@@ -409,6 +465,7 @@ impl App {
             self.shader_mode,
             &self.depth_shader,
             &self.normals_shader,
+            &self.toon_shader,
             &self.ship_shader,
             &self.ship_mesh,
             &ship_model,
@@ -426,6 +483,7 @@ impl App {
         shader_mode: ShaderMode,
         depth_shader: &DepthDebugShader,
         normals_shader: &NormalsDebugShader,
+        toon_shader: &ToonShader,
         base_shader: &S,
         mesh: &Mesh,
         model_matrix: &Mat4,
@@ -443,6 +501,16 @@ impl App {
                     view_proj_matrix: vp_matrix,
                     material,
                     shader: base_shader,
+                };
+                renderer.render_mesh(mesh, &ctx, target, stats);
+            }
+            ShaderMode::Toon => {
+                let ctx = RenderContext {
+                    model_matrix,
+                    rotation_matrix,
+                    view_proj_matrix: vp_matrix,
+                    material,
+                    shader: toon_shader,
                 };
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }

@@ -1,6 +1,6 @@
 pub mod clipping;
 pub mod rasterizer;
-pub mod shader;
+pub mod shaders;
 
 use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::material::Material;
@@ -9,10 +9,8 @@ use crate::mesh::Mesh;
 use crate::stats::FrameStats;
 use clipping::{ClipTriangle, ClipVertex, ClippedTriangles, clip_triangle_near_plane};
 pub use rasterizer::{VertexOut, is_front_facing, rasterize_triangle};
-pub use shader::{
-    DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput, FragmentShader,
-    NormalsDebugShader, ShaderMode, TexturedDiffuseShader,
-};
+pub use shaders as shader;
+pub use shaders::*;
 
 /// Renderizador 3D por software ejecutado íntegramente en CPU.
 ///

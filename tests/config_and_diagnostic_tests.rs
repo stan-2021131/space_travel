@@ -78,8 +78,11 @@ fn test_diagnostic_keys_and_shader_modes() {
         "La tecla 'D' no debe alterar el modo de estadísticas"
     );
 
-    // La tecla 'F2' cambia cíclicamente el modo de shader
+    // La tecla 'F2' cambia cíclicamente el modo de shader (Normal -> Toon -> Depth -> Normals)
     controls.handle_key_action(true, false, false); // is_f2 = true
+    assert_eq!(controls.shader_mode, ShaderMode::Toon);
+
+    controls.handle_key_action(true, false, false);
     assert_eq!(controls.shader_mode, ShaderMode::DepthDebug);
 
     controls.handle_key_action(true, false, false);
@@ -120,6 +123,8 @@ fn test_diagnostic_keys_and_shader_modes() {
     assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Compact);
 
     // 'F2' cicla shader_mode en App
+    app.handle_diagnostic_key(true, false, false);
+    assert_eq!(app.shader_mode, ShaderMode::Toon);
     app.handle_diagnostic_key(true, false, false);
     assert_eq!(app.shader_mode, ShaderMode::DepthDebug);
     app.handle_diagnostic_key(true, false, false);

@@ -15,9 +15,15 @@ pub struct AppConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SimulationConfig {
+    #[serde(default = "default_seed")]
+    pub seed: u32,
     pub time_scale: f32,
     pub fixed_timestep: f32,
     pub max_frame_delta: f32,
+}
+
+fn default_seed() -> u32 {
+    67
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -115,17 +121,6 @@ impl AppConfig {
                 "[{}] Planos de cámara inválidos: near ({}) debe ser menor que far ({})",
                 p, self.camera.near_plane, self.camera.far_plane
             ));
-        }
-
-        if self.ship.max_speed <= 0.0 || self.ship.acceleration <= 0.0 {
-            return Err(format!(
-                "[{}] Parámetros de nave (max_speed, acceleration) deben ser positivos",
-                p
-            ));
-        }
-
-        if self.camera.position_smoothing <= 0.0 || self.camera.rotation_smoothing <= 0.0 {
-            return Err(format!("[{}] Suavizado de cámara debe ser mayor a 0", p));
         }
 
         if self.ship.max_speed <= 0.0 || self.ship.acceleration <= 0.0 {

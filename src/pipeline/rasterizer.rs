@@ -2,7 +2,7 @@ use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::material::Material;
 use crate::math::{Vec2, Vec3, Vec4};
 use crate::pipeline::clipping::ClipVertex;
-use crate::pipeline::shader::{FragmentInput, FragmentShader};
+use crate::pipeline::shaders::{FragmentInput, FragmentShader};
 use crate::stats::FrameStats;
 
 /// Vértice resultante de la división de perspectiva y conversión a pantalla,

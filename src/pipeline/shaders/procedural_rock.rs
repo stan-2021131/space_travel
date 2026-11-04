@@ -1,0 +1,146 @@
+use super::{FragmentInput, FragmentShader};
+use crate::buffer::Color;
+use crate::math::Vec3;
+
+/// Shader procedural para superficies planetarias rocosas sin necesidad de texturas de imagen.
+///
+/// Sintetiza analíticamente la geología mediante ruido determinista tridimensional evaluado
+/// sobre coordenadas esféricas continuas (eliminando facetas poligonales). Genera cráteres
+/// de impacto con crestas elevadas, mares de basalto oscuro, vetas minerales y grano fino.
+pub struct ProceduralRockShader {
+    pub seed: u32,
+    pub light_pos: Vec3,
+    pub ambient_intensity: f32,
+    pub body_center: Vec3,
+    pub rotation_rad: f32,
+}
+
+impl ProceduralRockShader {
+    pub fn new(seed: u32, light_pos: Vec3) -> Self {
+        Self {
+            seed,
+            light_pos,
+            ambient_intensity: 0.12,
+            body_center: Vec3::zero(),
+            rotation_rad: 0.0,
+        }
+    }
+
+    /// Hash pseudoaleatorio determinista en el espacio de celda entera tridimensional.
+    #[inline]
+    fn hash3(x: i32, y: i32, z: i32, seed: u32) -> f32 {
+        let mut h = (x as u32).wrapping_mul(374761393)
+            ^ (y as u32).wrapping_mul(668265263)
+            ^ (z as u32).wrapping_mul(951214213)
+            ^ seed.wrapping_mul(1103515245);
+        h = (h ^ (h >> 13)).wrapping_mul(1274126177);
+        (h as f32) / (u32::MAX as f32)
+    }
+
+    /// Ruido de valor continuo tridimensional con interpolación cúbica (smoothstep).
+    fn value_noise(p: Vec3, seed: u32) -> f32 {
+        let ix = p.x.floor() as i32;
+        let iy = p.y.floor() as i32;
+        let iz = p.z.floor() as i32;
+
+        let fx = p.x - p.x.floor();
+        let fy = p.y - p.y.floor();
+        let fz = p.z - p.z.floor();
+
+        // Curva cúbica de interpolación: 3t^2 - 2t^3
+        let ux = fx * fx * (3.0 - 2.0 * fx);
+        let uy = fy * fy * (3.0 - 2.0 * fy);
+        let uz = fz * fz * (3.0 - 2.0 * fz);
+
+        let c000 = Self::hash3(ix, iy, iz, seed);
+        let c100 = Self::hash3(ix + 1, iy, iz, seed);
+        let c010 = Self::hash3(ix, iy + 1, iz, seed);
+        let c110 = Self::hash3(ix + 1, iy + 1, iz, seed);
+        let c001 = Self::hash3(ix, iy, iz + 1, seed);
+        let c101 = Self::hash3(ix + 1, iy, iz + 1, seed);
+        let c011 = Self::hash3(ix, iy + 1, iz + 1, seed);
+        let c111 = Self::hash3(ix + 1, iy + 1, iz + 1, seed);
+
+        let x00 = c000 + ux * (c100 - c000);
+        let x10 = c010 + ux * (c110 - c010);
+        let x01 = c001 + ux * (c101 - c001);
+        let x11 = c011 + ux * (c111 - c011);
+
+        let y0 = x00 + uy * (x10 - x00);
+        let y1 = x01 + uy * (x11 - x01);
+
+        y0 + uz * (y1 - y0)
+    }
+}
+
+impl FragmentShader for ProceduralRockShader {
+    fn shade(&self, input: &FragmentInput<'_>) -> Color {
+        // Dirección radial esférica continua desde el centro del planeta para eliminar facetas
+        let offset = input.world_pos - self.body_center;
+        let n = if offset.length_squared() > 1e-4 {
+            offset.normalize()
+        } else {
+            input.world_normal.normalize()
+        };
+
+        // Rotación axial inversa para que las coordenadas de ruido giren solidariamente con el planeta
+        let cos_r = (-self.rotation_rad).cos();
+        let sin_r = (-self.rotation_rad).sin();
+        let local_n = Vec3::new(n.x * cos_r - n.z * sin_r, n.y, n.x * sin_r + n.z * cos_r);
+
+        // 1. Manchas continentales y mares basálticos oscuros (baja frecuencia)
+        let maria = Self::value_noise(local_n * 2.8, self.seed);
+
+        // 2. Anillos y crestas de cráteres de impacto (ridged noise a media frecuencia)
+        let crater_raw = Self::value_noise(local_n * 7.5, self.seed.wrapping_add(10));
+        let crater_rim = (1.0 - (crater_raw - 0.5).abs() * 2.0).powi(2); // Crestas afiladas
+
+        // 3. Micro-aspereza y granularidad de grava/roca (alta frecuencia)
+        let grain = Self::value_noise(local_n * 26.0, self.seed.wrapping_add(20));
+
+        // Combinación estratigráfica
+        let rock_val = (0.50 * maria + 0.35 * crater_rim + 0.15 * grain).clamp(0.0, 1.0);
+
+        // Paleta geológica mineral de alto contraste:
+        // - [0.00 .. 0.40]: Basalto volcánico y cuencas oscuras
+        // - [0.40 .. 0.72]: Arenisca ocre/terracota marciana
+        // - [0.72 .. 1.00]: Crestas de impacto claras, cuarzo y regolito blanquecino
+        let (r, g, b) = if rock_val < 0.40 {
+            let t = rock_val / 0.40;
+            let r = 0.12 + 0.16 * t;
+            let g = 0.10 + 0.10 * t;
+            let b = 0.09 + 0.08 * t;
+            (r, g, b)
+        } else if rock_val < 0.72 {
+            let t = (rock_val - 0.40) / 0.32;
+            let r = 0.28 + 0.34 * t;
+            let g = 0.20 + 0.14 * t;
+            let b = 0.17 + 0.06 * t;
+            (r, g, b)
+        } else {
+            let t = (rock_val - 0.72) / 0.28;
+            let r = 0.62 + 0.28 * t;
+            let g = 0.48 + 0.36 * t;
+            let b = 0.35 + 0.37 * t;
+            (r, g, b)
+        };
+
+        // Iluminación difusa con luz proveniente del Sol
+        let l = (self.light_pos - input.world_pos).normalize();
+        let n_dot_l = n.dot(l).max(0.0);
+
+        // Modulación sutil de iluminación por relieve (las crestas reciben más luz)
+        let relief_mult = 0.85 + 0.30 * crater_rim;
+        let lighting = (self.ambient_intensity
+            + n_dot_l * (1.0 - self.ambient_intensity) * relief_mult)
+            .clamp(0.0, 1.0);
+
+        let kd = input.material.kd;
+        Color::from_f32(
+            (r * kd.x * lighting).min(1.0),
+            (g * kd.y * lighting).min(1.0),
+            (b * kd.z * lighting).min(1.0),
+            1.0,
+        )
+    }
+}

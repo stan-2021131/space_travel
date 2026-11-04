@@ -21,8 +21,8 @@ pub use mesh::{AABB, Mesh, Vertex};
 pub use physics::{ShipInput, ShipState};
 pub use pipeline::{
     DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput, FragmentShader,
-    NormalsDebugShader, RenderContext, RenderTarget, ShaderMode, SoftwareRenderer,
-    TexturedDiffuseShader,
+    NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget,
+    ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
 pub use scene::CelestialBody;
 pub use stats::{DiagnosticControls, FrameStats, StatsDisplayMode, StatsTracker};
