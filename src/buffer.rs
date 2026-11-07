@@ -98,6 +98,37 @@ impl Framebuffer {
     pub fn is_empty(&self) -> bool {
         self.pixels.is_empty()
     }
+
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [Color] {
+        &mut self.pixels
+    }
+
+    /// Divide el framebuffer en `num_chunks` franjas horizontales contiguas y disjuntas.
+    /// Retorna tuplas con `(y_start, y_end, slice)`.
+    pub fn split_horizontal_chunks(
+        &mut self,
+        num_chunks: usize,
+    ) -> Vec<(usize, usize, &mut [Color])> {
+        let n = num_chunks.clamp(1, self.height.max(1));
+        let height = self.height;
+        let width = self.width;
+
+        let mut chunks = Vec::with_capacity(n);
+        let mut rem = &mut self.pixels[..];
+
+        for i in 0..n {
+            let y_start = (i * height) / n;
+            let y_end = ((i + 1) * height) / n;
+            let pixel_count = (y_end - y_start) * width;
+
+            let (chunk, next_rem) = rem.split_at_mut(pixel_count);
+            chunks.push((y_start, y_end, chunk));
+            rem = next_rem;
+        }
+
+        chunks
+    }
 }
 
 /// Buffer de profundidad (Depth Buffer / Z-Buffer) en CPU.
@@ -150,4 +181,111 @@ impl DepthBuffer {
         }
         false
     }
+
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [f32] {
+        &mut self.buffer
+    }
+
+    /// Divide el buffer de profundidad en `num_chunks` franjas horizontales contiguas y disjuntas.
+    /// Retorna tuplas con `(y_start, y_end, slice)`.
+    pub fn split_horizontal_chunks(
+        &mut self,
+        num_chunks: usize,
+    ) -> Vec<(usize, usize, &mut [f32])> {
+        let n = num_chunks.clamp(1, self.height.max(1));
+        let height = self.height;
+        let width = self.width;
+
+        let mut chunks = Vec::with_capacity(n);
+        let mut rem = &mut self.buffer[..];
+
+        for i in 0..n {
+            let y_start = (i * height) / n;
+            let y_end = ((i + 1) * height) / n;
+            let pixel_count = (y_end - y_start) * width;
+
+            let (chunk, next_rem) = rem.split_at_mut(pixel_count);
+            chunks.push((y_start, y_end, chunk));
+            rem = next_rem;
+        }
+
+        chunks
+    }
+}
+
+/// Franja horizontal de renderizado en CPU acotada al rango vertical `[y_start, y_end)`.
+///
+/// Otorga acceso exclusivo a porciones disjuntas de color y profundidad sin condiciones de carrera.
+pub struct RenderBand<'a> {
+    pub width: usize,
+    pub height: usize,
+    pub y_start: usize,
+    pub y_end: usize,
+    pub pixels: &'a mut [Color],
+    pub depth: &'a mut [f32],
+}
+
+impl<'a> RenderBand<'a> {
+    #[inline]
+    pub fn set_pixel(&mut self, x: usize, y: usize, color: Color) {
+        if x < self.width && y >= self.y_start && y < self.y_end {
+            let local_y = y - self.y_start;
+            self.pixels[local_y * self.width + x] = color;
+        }
+    }
+
+    #[inline]
+    pub fn test_and_set_depth(&mut self, x: usize, y: usize, depth: f32) -> bool {
+        if x < self.width && y >= self.y_start && y < self.y_end {
+            let local_y = y - self.y_start;
+            let idx = local_y * self.width + x;
+            if depth < self.depth[idx] {
+                self.depth[idx] = depth;
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Divide sincrónicamente un Framebuffer y un DepthBuffer en `num_bands` franjas horizontales.
+pub fn split_render_bands<'a>(
+    framebuffer: &'a mut Framebuffer,
+    depth_buffer: &'a mut DepthBuffer,
+    num_bands: usize,
+) -> Vec<RenderBand<'a>> {
+    assert_eq!(framebuffer.width, depth_buffer.width);
+    assert_eq!(framebuffer.height, depth_buffer.height);
+
+    let n = num_bands.clamp(1, framebuffer.height.max(1));
+    let height = framebuffer.height;
+    let width = framebuffer.width;
+
+    let mut bands = Vec::with_capacity(n);
+    let mut fb_rem = &mut framebuffer.pixels[..];
+    let mut db_rem = &mut depth_buffer.buffer[..];
+
+    for i in 0..n {
+        let y_start = (i * height) / n;
+        let y_end = ((i + 1) * height) / n;
+        let pixel_count = (y_end - y_start) * width;
+
+        let (fb_chunk, fb_next) = fb_rem.split_at_mut(pixel_count);
+        let (db_chunk, db_next) = db_rem.split_at_mut(pixel_count);
+
+        bands.push(RenderBand {
+            width,
+            height,
+            y_start,
+            y_end,
+            pixels: fb_chunk,
+            depth: db_chunk,
+        });
+
+        fb_rem = fb_next;
+        db_rem = db_next;
+    }
+
+    bands
 }

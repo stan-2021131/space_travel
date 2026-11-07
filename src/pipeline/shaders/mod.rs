@@ -60,6 +60,6 @@ impl ShaderMode {
 }
 
 /// Trait para shaders de fragmentos ejecutados íntegramente en CPU.
-pub trait FragmentShader {
+pub trait FragmentShader: Sync {
     fn shade(&self, input: &FragmentInput<'_>) -> Color;
 }

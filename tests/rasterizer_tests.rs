@@ -286,3 +286,133 @@ fn test_depth_debug_shader_far_body_visibility() {
         color_sun.r
     );
 }
+
+#[test]
+fn test_buffer_horizontal_splitting() {
+    let mut fb = Framebuffer::new(80, 60);
+    let mut db = DepthBuffer::new(80, 60);
+
+    let bands = space_travel::buffer::split_render_bands(&mut fb, &mut db, 4);
+    assert_eq!(bands.len(), 4);
+
+    let mut current_y = 0;
+    for band in bands {
+        assert_eq!(band.width, 80);
+        assert_eq!(band.height, 60);
+        assert_eq!(band.y_start, current_y);
+        assert!(band.y_end > band.y_start);
+        assert_eq!(band.pixels.len(), (band.y_end - band.y_start) * 80);
+        assert_eq!(band.depth.len(), (band.y_end - band.y_start) * 80);
+        current_y = band.y_end;
+    }
+    assert_eq!(
+        current_y, 60,
+        "Todas las bandas deben cubrir exactamente [0, 60)"
+    );
+}
+
+#[test]
+fn test_multithreaded_vs_singlethreaded_pixel_identity() {
+    use space_travel::mesh::{Mesh, Vertex};
+    use space_travel::pipeline::{RenderContext, RenderTarget, SoftwareRenderer};
+
+    // Crear una malla triangular simple con 2 caras
+    let v0 = Vertex::new(
+        Vec3::new(-1.0, -1.0, 0.0),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec2::new(0.0, 0.0),
+    );
+    let v1 = Vertex::new(
+        Vec3::new(1.0, -1.0, 0.0),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+    );
+    let v2 = Vertex::new(
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec2::new(0.5, 1.0),
+    );
+    let v3 = Vertex::new(
+        Vec3::new(-0.5, 0.0, -0.5),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec2::new(0.25, 0.5),
+    );
+
+    let mesh = Mesh::new(vec![v0, v1, v2, v3], vec![0, 1, 2, 0, 2, 3]);
+
+    let model = Mat4::IDENTITY;
+    let rot = Mat4::IDENTITY;
+    let vp = Mat4::perspective(deg_to_rad(60.0), 1.0, 0.1, 50.0)
+        * Mat4::look_at(Vec3::new(0.0, 0.0, 3.0), Vec3::zero(), Vec3::up());
+    let mat = Material::default_diffuse();
+    let mut shader = DiffuseShader::new();
+    shader.light_dir = Vec3::new(2.0, 3.0, 5.0).normalize();
+
+    let ctx = RenderContext {
+        model_matrix: &model,
+        rotation_matrix: &rot,
+        view_proj_matrix: &vp,
+        material: &mat,
+        shader: &shader,
+    };
+
+    // 1. Renderizado monohilo (1 banda)
+    let mut fb_single = Framebuffer::new(64, 64);
+    let mut db_single = DepthBuffer::new(64, 64);
+    let mut stats_single = FrameStats::default();
+    {
+        let mut target_single = RenderTarget {
+            framebuffer: &mut fb_single,
+            depth_buffer: &mut db_single,
+        };
+        let mut renderer_single = SoftwareRenderer::new();
+        renderer_single.render_mesh(&mesh, &ctx, &mut target_single, &mut stats_single);
+    }
+
+    // 2. Renderizado multihilo normal
+    let mut fb_multi = Framebuffer::new(64, 64);
+    let mut db_multi = DepthBuffer::new(64, 64);
+    let mut stats_multi = FrameStats::default();
+    {
+        let mut target_multi = RenderTarget {
+            framebuffer: &mut fb_multi,
+            depth_buffer: &mut db_multi,
+        };
+        let mut renderer_multi = SoftwareRenderer::new();
+        renderer_multi.render_mesh(&mesh, &ctx, &mut target_multi, &mut stats_multi);
+    }
+
+    assert!(stats_single.fragmentos_evaluados > 0);
+    assert_eq!(
+        stats_single.fragmentos_evaluados,
+        stats_multi.fragmentos_evaluados
+    );
+    assert_eq!(
+        stats_single.fragmentos_aceptados_depth,
+        stats_multi.fragmentos_aceptados_depth
+    );
+
+    // Comparación pixel por pixel
+    for y in 0..64 {
+        for x in 0..64 {
+            let col_s = fb_single.get_pixel(x, y);
+            let col_m = fb_multi.get_pixel(x, y);
+            assert_eq!(
+                col_s, col_m,
+                "Discrepancia de color en ({}, {}): single={:?}, multi={:?}",
+                x, y, col_s, col_m
+            );
+
+            let d_s = db_single.get(x, y);
+            let d_m = db_multi.get(x, y);
+            assert!(
+                d_s == d_m || (d_s - d_m).abs() < 1e-5,
+                "Discrepancia de profundidad en ({}, {}): single={}, multi={}",
+                x,
+                y,
+                d_s,
+                d_m
+            );
+        }
+    }
+}
