@@ -143,17 +143,27 @@ pub fn rasterize_triangle<S: FragmentShader>(
 
     stats.triangulos_rasterizados += 1;
 
+    // Precomputación invariante del doble de área del triángulo (delta) y su recíproco
+    let a = v0.screen_pos;
+    let b = v1.screen_pos;
+    let c = v2.screen_pos;
+    let delta = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if delta.abs() < 1e-7 {
+        return;
+    }
+    let inv_delta = 1.0 / delta;
+
     // Rasterización píxel por píxel con muestreo en el centro (x + 0.5, y + 0.5)
     for y in min_y..=max_y {
+        let py = y as f32 + 0.5;
         for x in min_x..=max_x {
             stats.fragmentos_evaluados += 1;
+            let px = x as f32 + 0.5;
 
-            let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
-            let (w0, w1, w2) =
-                match calculate_barycentric_2d(p, v0.screen_pos, v1.screen_pos, v2.screen_pos) {
-                    Some(bary) => bary,
-                    None => continue,
-                };
+            // Evaluación baricéntrica analítica reutilizando inv_delta precalculado
+            let w0 = ((b.x - px) * (c.y - py) - (b.y - py) * (c.x - px)) * inv_delta;
+            let w1 = ((c.x - px) * (a.y - py) - (c.y - py) * (a.x - px)) * inv_delta;
+            let w2 = 1.0 - w0 - w1;
 
             // Prueba de contención dentro del triángulo
             const EPS: f32 = -1e-4;

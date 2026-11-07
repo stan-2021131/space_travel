@@ -1,6 +1,8 @@
 use crate::buffer::{Color, Framebuffer};
 use crate::camera::Camera;
 
+const INV_U32_MAX: f32 = 1.0 / 4294967295.0;
+
 /// Shader procedural en CPU para el fondo cósmico del universo.
 ///
 /// Evalúa en tiempo real estrellas puntuales deterministas y nebulosas suaves
@@ -23,7 +25,7 @@ impl SkyShader {
             ^ (z as u32).wrapping_mul(951214213)
             ^ seed.wrapping_mul(1103515245);
         h = (h ^ (h >> 13)).wrapping_mul(1274126177);
-        (h as f32) / (u32::MAX as f32)
+        (h as f32) * INV_U32_MAX
     }
 
     /// Renderiza el fondo cósmico sobre el framebuffer completo interpolando rayos directores de cámara.
@@ -81,9 +83,11 @@ impl SkyShader {
                 } else {
                     // 2. Fondo cósmico profundo y oscuro con sutiles velos de nebulosas
                     // Velo violeta/púrpura muy tenue
-                    let neb1 = ((dir.x * 2.2 + dir.y * 1.8).sin() * 0.5 + 0.5).powi(3);
+                    let s1 = (dir.x * 2.2 + dir.y * 1.8).sin() * 0.5 + 0.5;
+                    let neb1 = s1 * s1 * s1;
                     // Velo cian/turquesa suave
-                    let neb2 = ((dir.z * 2.0 - dir.x * 1.6).cos() * 0.5 + 0.5).powi(3);
+                    let s2 = (dir.z * 2.0 - dir.x * 1.6).cos() * 0.5 + 0.5;
+                    let neb2 = s2 * s2 * s2;
 
                     let base_r = 4.0 + neb1 * 7.0;
                     let base_g = 5.0 + neb1 * 2.0 + neb2 * 6.0;

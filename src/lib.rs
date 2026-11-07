@@ -13,7 +13,7 @@ pub mod texture;
 
 pub use app::App;
 pub use buffer::{Color, DepthBuffer, Framebuffer};
-pub use camera::Camera;
+pub use camera::{Camera, Frustum, Plane};
 pub use config::AppConfig;
 pub use material::Material;
 pub use math::{Mat4, Transform, Vec2, Vec3, Vec4};
