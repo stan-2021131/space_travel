@@ -186,11 +186,11 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ### Formato Compacto (Predeterminado)
 ```text
-[60 FPS |  3.2 ms] obj 3 | tri 2146→1073 | nave 12.4 WU/s | rocoso +14.2 WU
+[60 FPS |  3.2 ms] obj 3 (cull 1) | tri 2146→1073 (cull 1508) | nave 12.4 WU/s | rocoso +14.2 WU
 ```
 - **FPS / Tiempo de CPU**: Cuadros por segundo y tiempo de rasterizado en milisegundos.
-- **obj**: Cantidad de modelos 3D renderizados en el cuadro (Sol, Planeta, Nave, Objetos de superficie).
-- **tri IN→RAST**: Triángulos procesados por el pipeline vs. triángulos efectivamente rasterizados tras clipping y backface culling.
+- **obj (cull)**: Modelos 3D renderizados vs. objetos omitidos en $O(1)$ fuera del frustum.
+- **tri IN→RAST (cull)**: Triángulos procesados vs. rasterizados vs. triángulos descartados antes de entrar al pipeline.
 - **nave**: Rapidez escalar actual de la nave en $\text{WU/s}$.
 - **cuerpo más cercano y distancia**: Nombre del cuerpo celeste más próximo y distancia en $\text{WU}$ a su superficie física ($+$ fuera de la superficie, $0$ en colisión).
 
@@ -198,9 +198,10 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 13. Pruebas Automatizadas
 
-El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con 54 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
 - **Pipeline de Renderizado** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, proyección al viewport y descarte.
+- **Descarte de Visión / Frustum Culling** (`frustum_tests.rs`): Extracción analítica de los 6 planos del frustum desde la matriz de Vista-Proyección ($VP = P \cdot V$) mediante Gribb-Hartmann, normalización de planos, distancias signadas, intersección analítica con esferas envolventes, descarte estricto en los 6 ejes y acumulación de métricas diagnósticas.
 - **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista (verificando determinismo estricto con `seed = 67`, varianza con semillas distintas y rotación solidaria con el planeta), shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`) con rotación 3D dependiente de la orientación de cámara y determinismo de semilla, y shader de nave espacial (`ShipShader`) con luz física solar dinámica, brillo especular metálico Blinn-Phong y emisión base ambiental de seguridad.
 - **Objetos de Superficie y Distribución Esférica** (`surface_tests.rs`): Distribución esférica uniforme de Fibonacci con semilla determinista, ortonormalidad estricta de la base local y alineación perpendicular a la normal radial de la esfera curva, descarte por distancia $O(1)$ con transición cúbica suave (*smoothstep*), enraizamiento geométrico universal automático por sagita esférica (`calculate_surface_embedding`) para evitar flotación sobre terreno curvo/facetas, carga íntegra de modelo de montaña OBJ/MTL y parseo declarativo en TOML.
 - **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
@@ -220,7 +221,8 @@ El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularm
   - Implementación del shader procedural de fondo cósmico estelar y nebulosas en CPU (`SkyShader`).
   - Implementación del shader de fuselaje metálico para la nave espacial con iluminación solar real (`ShipShader`).
   - Implementación del sistema de distribución procedural de objetos en superficie esférica con orientación curva, enraizamiento geométrico universal y descarte por distancia suave (`src/scene/surface.rs`).
-  - Batería de 48 pruebas deterministas modulares y documentación técnica.
+  - Implementación del sistema de Frustum Culling analítico mediante extracción de planos Gribb-Hartmann y descarte esférico multinivel (`src/camera.rs`).
+  - Batería de 54 pruebas deterministas modulares y documentación técnica.
 
 ---
 
@@ -243,8 +245,8 @@ El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularm
 | **Navegación** | Aceleración, frenado y giro progresivos | 8 | **8** | **Reclamado**: Cinemática arcade en `physics.rs` con empuje, drag exponencial y Euler |
 | **Navegación** | Atracción gravitatoria de planetas | 10 | **0** | No iniciado |
 | **Navegación** | Colisión básica que impide atravesar planetas | 4 | **4** | **Reclamado**: Resolución analítica inelástica con conservación tangencial |
-| **Rendimiento** | Descarte de objetos fuera de la vista (Frustum Culling) | 7 | **0** | No iniciado |
+| **Rendimiento** | Descarte de objetos fuera de la vista (Frustum Culling) | 7 | **7** | **Reclamado**: Extracción de 6 planos (Gribb-Hartmann) y descarte esférico multinivel |
 | **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0** | Pendiente (descarte $O(1)$ listo; pendiente modelo simplificado) |
 | **Presentación** | Coherencia visual y composición de la escena | 5 | **0** | No iniciado |
 | **Presentación** | Claridad de la experiencia y controles | 5 | **0** | No iniciado |
-| **TOTAL** | | **200 (Máx. 100)** | **68** | **68 pts formalmente implementados y demostrables en vivo** |
+| **TOTAL** | | **200 (Máx. 100)** | **75** | **75 pts formalmente implementados y demostrables en vivo** |
