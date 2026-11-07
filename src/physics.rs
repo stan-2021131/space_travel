@@ -1,6 +1,49 @@
 use crate::config::ShipConfig;
 use crate::math::{Mat4, Vec3, deg_to_rad};
 
+/// Obstáculo esférico usado por todas las entidades móviles. Los cuerpos
+/// celestes y objetos de superficie se aproximan mediante esta envolvente.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CollisionSphere {
+    pub center: Vec3,
+    pub radius: f32,
+}
+
+impl CollisionSphere {
+    pub const fn new(center: Vec3, radius: f32) -> Self {
+        Self { center, radius }
+    }
+}
+
+/// Resuelve una penetración entre una entidad móvil y un obstáculo esférico.
+/// Conserva la velocidad tangencial y elimina solo la componente que entra.
+pub fn resolve_sphere_collision(
+    position: &mut Vec3,
+    velocity: &mut Vec3,
+    entity_radius: f32,
+    obstacle: CollisionSphere,
+) -> bool {
+    let effective_radius = obstacle.radius + entity_radius;
+    let delta = *position - obstacle.center;
+    let distance = delta.length();
+    if distance >= effective_radius {
+        return false;
+    }
+
+    let normal = if distance > 1e-6 {
+        delta / distance
+    } else {
+        Vec3::up()
+    };
+    *position = obstacle.center + normal * effective_radius;
+
+    let inward_speed = velocity.dot(normal);
+    if inward_speed < 0.0 {
+        *velocity -= normal * inward_speed;
+    }
+    true
+}
+
 /// Estado de entrada del usuario para el control de la nave.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ShipInput {
@@ -12,6 +55,7 @@ pub struct ShipInput {
     pub pitch_down: bool,       // Flecha Abajo
     pub roll_left: bool,        // Tecla Q
     pub roll_right: bool,       // Tecla E
+    pub fire: bool,             // Barra espaciadora
 }
 
 /// Estado dinámico de la nave espacial con cinemática arcade e inercia.
@@ -151,31 +195,11 @@ impl ShipState {
     ///
     /// Retorna `true` si hubo contacto y se corrigió la trayectoria.
     pub fn resolve_collision(&mut self, body_center: Vec3, body_radius: f32, margin: f32) -> bool {
-        let effective_radius = body_radius + self.collision_radius + margin;
-        let delta = self.position - body_center;
-        let dist = delta.length();
-
-        if dist < effective_radius {
-            // 1. Normal de contacto (evita divisiones por cero si los centros coinciden)
-            let normal = if dist > 1e-6 {
-                delta / dist
-            } else {
-                Vec3::up()
-            };
-
-            // 2. Reposición instantánea sobre el límite seguro
-            self.position = body_center + normal * effective_radius;
-
-            // 3. Respuesta inelástica: eliminar exclusivamente la velocidad hacia el cuerpo
-            let normal_vel = self.velocity.dot(normal);
-            if normal_vel < 0.0 {
-                // Se anula la componente normal, conservando al 100% la velocidad tangencial
-                self.velocity -= normal * normal_vel;
-            }
-
-            return true;
-        }
-
-        false
+        resolve_sphere_collision(
+            &mut self.position,
+            &mut self.velocity,
+            self.collision_radius,
+            CollisionSphere::new(body_center, body_radius + margin),
+        )
     }
 }
