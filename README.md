@@ -176,9 +176,30 @@ cargo run --release
 | `Flecha Arriba` / `Flecha Abajo` | Cabeceo (*Pitch*) hacia arriba / abajo. |
 | `Q` / `E` | Alabeo (*Roll*) a la izquierda / derecha. |
 | `R` | Reiniciar posición, orientación y velocidad de la nave a los valores iniciales. |
+| `Espacio` | Disparar un proyectil desde la nave. |
+| `F4` | Activar o desactivar el encuentro con enemigos. |
 | `F2` | Alternar modo de shader CPU: **Normal** $\to$ **Toon (Anime Cel-Shading)** $\to$ **Depuración de Profundidad (Depth Debug)** $\to$ **Depuración de Normales (Normals Debug)**. |
 | `F3` | Alternar reporte de métricas en consola: **Compacto** $\to$ **Detallado** $\to$ **Desactivado (Off)**. |
 | `Escape` | Cerrar la aplicación. |
+
+El proyecto inicia en modo pacífico, sin enemigos. Al presionar `F4`, los
+visitantes aparecen detrás del Sol y siguen a la nave en modo de supervisión,
+sin disparar. El encuentro cambia a modo de ataque y activa las oleadas solo
+cuando el jugador destruye al primer enemigo. La nave tiene 100 puntos de vida;
+`R` restaura su estado y su vida. La nave y cada enemigo muestran una barra de
+vida proyectada sobre su posición. Las naves enemigas orientan su punta hacia la
+nave principal mientras la siguen.
+
+Durante el combate, si el jugador pasa 20 segundos sin disparar, los enemigos
+detienen completamente su movimiento y regresan a observación pacífica; mantienen
+su posición, pero continúan orientando la punta hacia la nave. Un nuevo disparo
+reactiva el ataque. Si la vida de la nave llega a cero, reaparece automáticamente
+con vida completa después de 3 segundos.
+
+La nave principal y las naves enemigas comparten el mismo sistema de colisiones:
+no pueden atravesar el Sol, los planetas ni los objetos colocados sobre sus
+superficies. Los enemigos reciben una desviación tangencial al chocar para poder
+rodear el obstáculo en lugar de quedar detenidos contra él.
 
 ---
 
