@@ -7,6 +7,7 @@ pub mod math;
 pub mod mesh;
 pub mod physics;
 pub mod pipeline;
+pub mod procedural;
 pub mod scene;
 pub mod stats;
 pub mod texture;
@@ -21,9 +22,11 @@ pub use mesh::{AABB, Mesh, Vertex};
 pub use physics::{ShipInput, ShipState};
 pub use pipeline::{
     DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput, FragmentShader,
-    NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget,
-    ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
+    NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext,
+    RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader,
+    ToonShader,
 };
+pub use procedural::generate_icosphere;
 pub use scene::{
     CelestialBody,
     surface::{

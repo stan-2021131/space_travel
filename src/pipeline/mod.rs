@@ -79,11 +79,21 @@ impl SoftwareRenderer {
                 .transform_direction(v.normal)
                 .normalize();
 
+            let world_tangent = ctx
+                .rotation_matrix
+                .transform_direction(v.tangent)
+                .normalize();
+
             // 3 y 4. Transformación combinada de vista y proyección: $v_{clip} = (P \cdot V) \cdot v_{world}$
             let clip_pos = ctx.view_proj_matrix.transform_vec4(world_pos.to_vec4(1.0));
 
-            self.vertex_clip_cache
-                .push(ClipVertex::new(clip_pos, world_pos, world_normal, v.uv));
+            self.vertex_clip_cache.push(ClipVertex::new(
+                clip_pos,
+                world_pos,
+                world_normal,
+                world_tangent,
+                v.uv,
+            ));
         }
 
         let width = target.framebuffer.width as f32;

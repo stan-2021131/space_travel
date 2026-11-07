@@ -6,9 +6,9 @@ use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
 use crate::physics::{ShipInput, ShipState};
 use crate::pipeline::{
-    DepthDebugShader, FragmentShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
-    RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
-    TexturedDiffuseShader, ToonShader,
+    DepthDebugShader, FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader,
+    ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader,
+    SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
     CelestialBody,
@@ -47,6 +47,7 @@ pub struct App {
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
+    normal_mapped_shader: NormalMappedShader,
     rock_shader: ProceduralRockShader,
     plasma_shader: PlasmaShader,
     ship_shader: ShipShader,
@@ -106,13 +107,44 @@ impl App {
 
         let mut planets = Vec::new();
         for p_cfg in &config.planets {
-            println!(
-                "[RECURSOS] Cargando planeta '{}': {}",
-                p_cfg.id, p_cfg.model_path
-            );
-            let p_mesh = Arc::new(Mesh::load_from_obj(Path::new(&p_cfg.model_path))?);
-            let p_geo_radius = p_mesh.geometric_radius().max(1e-4);
-            let p_scale = p_cfg.radius / p_geo_radius;
+            let mut mesh = if p_cfg.mesh_type == "icosphere" {
+                println!(
+                    "[PROCEDURAL] Generando esfera geodésica para '{}' (radio: {}, subdiv: {})",
+                    p_cfg.id, p_cfg.radius, p_cfg.subdivisions
+                );
+                crate::procedural::generate_icosphere(p_cfg.radius, p_cfg.subdivisions)
+            } else {
+                println!(
+                    "[RECURSOS] Cargando cuerpo celeste '{}': {}",
+                    p_cfg.id, p_cfg.model_path
+                );
+                let mut m = Mesh::load_from_obj(Path::new(&p_cfg.model_path))?;
+                // Subdivisión procedural de geometría previa a rasterizar (+10 pts)
+                for _ in 0..p_cfg.subdivisions {
+                    m.subdivide();
+                }
+                m
+            };
+
+            // Deformación geométrica por ruido con semilla universal (+10 pts)
+            if p_cfg.deformation_amplitude.abs() > 1e-6 {
+                println!(
+                    "[GEOMETRÍA] Aplicando deformación procedural a '{}' (amp: {}, freq: {}, seed universal: {})",
+                    p_cfg.id,
+                    p_cfg.deformation_amplitude,
+                    p_cfg.deformation_frequency,
+                    config.simulation.seed
+                );
+                mesh.deform(
+                    p_cfg.deformation_amplitude,
+                    p_cfg.deformation_frequency,
+                    config.simulation.seed,
+                );
+            }
+
+            let geo_radius = mesh.geometric_radius().max(1e-4);
+            let p_scale = p_cfg.radius / geo_radius;
+            let p_mesh = Arc::new(mesh);
 
             let mut surface_groups = Vec::new();
             for s_cfg in &p_cfg.surface_objects {
@@ -189,6 +221,7 @@ impl App {
         let plasma_shader = PlasmaShader::new();
         let toon_shader = ToonShader::new(sun_body.position, camera.eye);
         let ship_shader = ShipShader::new(sun_body.position, camera.eye);
+        let normal_mapped_shader = NormalMappedShader::new(sun_body.position, camera.eye);
         let sky_shader = SkyShader::new(config.simulation.seed);
 
         Ok(Self {
@@ -206,6 +239,7 @@ impl App {
             accumulator: 0.0,
             shader_mode: ShaderMode::Normal,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
+            normal_mapped_shader,
             rock_shader,
             plasma_shader,
             ship_shader,
@@ -418,6 +452,8 @@ impl App {
         self.plasma_shader.sun_center = self.sun_body.position;
         self.rock_shader.light_pos = self.sun_body.position;
         self.planet_shader.light_pos = self.sun_body.position;
+        self.normal_mapped_shader.light_pos = self.sun_body.position;
+        self.normal_mapped_shader.camera_pos = self.camera.eye;
 
         let mut target = RenderTarget {
             framebuffer: &mut self.framebuffer,
@@ -483,6 +519,24 @@ impl App {
                     &self.normals_shader,
                     &self.toon_shader,
                     &self.rock_shader,
+                    &planet.mesh,
+                    &p_model,
+                    &p_rot,
+                    &vp_matrix,
+                    &planet.material,
+                    &mut target,
+                    stats,
+                );
+            } else if planet.shader_type == "normal_mapped"
+                || (planet.shader_type == "texture" && planet.material.normal_texture.is_some())
+            {
+                Self::draw_mesh(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.normal_mapped_shader,
                     &planet.mesh,
                     &p_model,
                     &p_rot,

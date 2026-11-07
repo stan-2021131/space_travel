@@ -11,7 +11,13 @@ use space_travel::pipeline::shader::{
 use space_travel::stats::FrameStats;
 
 fn dummy_clip_vertex(clip_pos: Vec4) -> ClipVertex {
-    ClipVertex::new(clip_pos, Vec3::zero(), Vec3::up(), Vec2::zero())
+    ClipVertex::new(
+        clip_pos,
+        Vec3::zero(),
+        Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
+        Vec2::zero(),
+    )
 }
 
 #[test]
@@ -42,18 +48,21 @@ fn test_backface_culling() {
         Vec4::new(-0.5, -0.5, 0.0, 1.0),
         Vec3::zero(),
         Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
         Vec2::zero(),
     );
     let cv1 = ClipVertex::new(
         Vec4::new(0.5, -0.5, 0.0, 1.0),
         Vec3::zero(),
         Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
         Vec2::zero(),
     );
     let cv2 = ClipVertex::new(
         Vec4::new(0.0, 0.5, 0.0, 1.0),
         Vec3::zero(),
         Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
         Vec2::zero(),
     );
 
@@ -99,6 +108,7 @@ fn test_depth_debug_shader_linearization() {
         depth_ndc: clip_close.z / clip_close.w,
         world_pos: Vec3::zero(),
         world_normal: Vec3::up(),
+        world_tangent: Vec3::new(1.0, 0.0, 0.0),
         uv: Vec2::zero(),
         barycentric: Vec3::new(1.0, 0.0, 0.0),
         material: &mat,
@@ -109,6 +119,7 @@ fn test_depth_debug_shader_linearization() {
         depth_ndc: clip_far.z / clip_far.w,
         world_pos: Vec3::zero(),
         world_normal: Vec3::up(),
+        world_tangent: Vec3::new(1.0, 0.0, 0.0),
         uv: Vec2::zero(),
         barycentric: Vec3::new(1.0, 0.0, 0.0),
         material: &mat,
@@ -126,6 +137,7 @@ fn test_viewport_transform_and_perspective_divide() {
         Vec4::new(2.0, -2.0, 1.0, 2.0),
         Vec3::new(1.0, 2.0, 3.0),
         Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
         Vec2::new(0.5, 0.5),
     );
     let vo = VertexOut::from_clip_vertex(&cv, 800.0, 600.0);
@@ -152,18 +164,21 @@ fn test_rasterize_triangle_outside_screen_cull() {
         Vec4::new(-100.0, 50.0, 0.5, 1.0),
         Vec3::zero(),
         Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
         Vec2::zero(),
     );
     let cv1 = ClipVertex::new(
         Vec4::new(-20.0, 20.0, 0.5, 1.0),
         Vec3::zero(),
         Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
         Vec2::zero(),
     );
     let cv2 = ClipVertex::new(
         Vec4::new(-50.0, 80.0, 0.5, 1.0),
         Vec3::zero(),
         Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
         Vec2::zero(),
     );
 
@@ -258,6 +273,7 @@ fn test_depth_debug_shader_far_body_visibility() {
         depth_ndc: sun_depth_ndc,
         world_pos: Vec3::zero(),
         world_normal: Vec3::up(),
+        world_tangent: Vec3::new(1.0, 0.0, 0.0),
         uv: Vec2::zero(),
         barycentric: Vec3::new(1.0, 0.0, 0.0),
         material: &mat,

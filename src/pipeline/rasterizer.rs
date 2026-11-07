@@ -15,9 +15,11 @@ pub struct VertexOut {
     pub depth_ndc: f32,
     pub world_pos: Vec3,
     pub normal: Vec3,
+    pub tangent: Vec3,
     pub uv: Vec2,
     // Atributos divididos por w para interpolación con corrección de perspectiva en pantalla:
     pub normal_div_w: Vec3,
+    pub tangent_div_w: Vec3,
     pub world_pos_div_w: Vec3,
     pub uv_div_w: Vec2,
 }
@@ -45,8 +47,10 @@ impl VertexOut {
             depth_ndc,
             world_pos: cv.world_pos,
             normal: cv.normal,
+            tangent: cv.tangent,
             uv: cv.uv,
             normal_div_w: cv.normal * inv_w,
+            tangent_div_w: cv.tangent * inv_w,
             world_pos_div_w: cv.world_pos * inv_w,
             uv_div_w: cv.uv * inv_w,
         }
@@ -187,6 +191,8 @@ pub fn rasterize_triangle<S: FragmentShader>(
 
             let normal =
                 (v0.normal_div_w * w0 + v1.normal_div_w * w1 + v2.normal_div_w * w2) * w_frag;
+            let tangent =
+                (v0.tangent_div_w * w0 + v1.tangent_div_w * w1 + v2.tangent_div_w * w2) * w_frag;
             let world_pos =
                 (v0.world_pos_div_w * w0 + v1.world_pos_div_w * w1 + v2.world_pos_div_w * w2)
                     * w_frag;
@@ -198,6 +204,7 @@ pub fn rasterize_triangle<S: FragmentShader>(
                 depth_ndc,
                 world_pos,
                 world_normal: normal.normalize(),
+                world_tangent: tangent.normalize(),
                 uv,
                 barycentric: Vec3::new(w0, w1, w2),
                 material,
