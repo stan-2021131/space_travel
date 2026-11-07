@@ -82,6 +82,24 @@ impl Framebuffer {
         }
     }
 
+    /// Rellena un rectángulo 2D recortándolo contra los límites del framebuffer.
+    pub fn fill_rect(&mut self, x: i32, y: i32, width: i32, height: i32, color: Color) {
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        let min_x = x.max(0) as usize;
+        let min_y = y.max(0) as usize;
+        let max_x = (x + width).min(self.width as i32).max(0) as usize;
+        let max_y = (y + height).min(self.height as i32).max(0) as usize;
+
+        for py in min_y..max_y {
+            let row_start = py * self.width;
+            for px in min_x..max_x {
+                self.pixels[row_start + px] = color;
+            }
+        }
+    }
+
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         let ptr = self.pixels.as_ptr() as *const u8;

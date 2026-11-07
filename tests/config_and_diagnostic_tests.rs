@@ -18,6 +18,10 @@ fn test_valid_configuration_loading() {
     assert!(config.simulation.time_scale > 0.0);
     assert!(config.simulation.fixed_timestep > 0.0);
     assert!(config.ship.max_speed > 0.0);
+    assert!(config.enemies.initial_count > 0);
+    assert!(config.enemies.player_max_health > 0.0);
+    assert_eq!(config.enemies.peace_after_no_fire_seconds, 20.0);
+    assert!(config.enemies.player_respawn_delay > 0.0);
     assert!(config.sun.radius > 0.0);
     assert!(!config.planets.is_empty());
     assert_eq!(config.planets[0].id, "rocoso");
@@ -52,6 +56,10 @@ fn test_invalid_configuration_rejections() {
     let mut bad_ship = valid.clone();
     bad_ship.ship.max_speed = -5.0;
     assert!(bad_ship.validate(Path::new("test.toml")).is_err());
+
+    let mut bad_enemies = valid.clone();
+    bad_enemies.enemies.initial_count = 0;
+    assert!(bad_enemies.validate(Path::new("test.toml")).is_err());
 
     // Suavizado de cámara <= 0
     let mut bad_cam = valid.clone();
