@@ -6,15 +6,17 @@ pub struct ClipVertex {
     pub clip_pos: Vec4,
     pub world_pos: Vec3,
     pub normal: Vec3,
+    pub tangent: Vec3,
     pub uv: Vec2,
 }
 
 impl ClipVertex {
-    pub fn new(clip_pos: Vec4, world_pos: Vec3, normal: Vec3, uv: Vec2) -> Self {
+    pub fn new(clip_pos: Vec4, world_pos: Vec3, normal: Vec3, tangent: Vec3, uv: Vec2) -> Self {
         Self {
             clip_pos,
             world_pos,
             normal,
+            tangent,
             uv,
         }
     }
@@ -25,6 +27,7 @@ impl ClipVertex {
             clip_pos: a.clip_pos.lerp(b.clip_pos, t),
             world_pos: a.world_pos.lerp(b.world_pos, t),
             normal: a.normal.lerp(b.normal, t).normalize(),
+            tangent: a.tangent.lerp(b.tangent, t).normalize(),
             uv: a.uv.lerp(b.uv, t),
         }
     }

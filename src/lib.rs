@@ -9,13 +9,14 @@ pub mod math;
 pub mod mesh;
 pub mod physics;
 pub mod pipeline;
+pub mod procedural;
 pub mod scene;
 pub mod stats;
 pub mod texture;
 
 pub use app::App;
 pub use buffer::{Color, DepthBuffer, Framebuffer};
-pub use camera::Camera;
+pub use camera::{Camera, Frustum, Plane};
 pub use combat::{CombatSystem, EncounterState, Enemy, Projectile, ProjectileOwner};
 pub use config::AppConfig;
 pub use hud::{draw_health_bar, project_world_to_screen};
@@ -25,9 +26,11 @@ pub use mesh::{AABB, Mesh, Vertex};
 pub use physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
 pub use pipeline::{
     DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput, FragmentShader,
-    NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget,
-    ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
+    NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext,
+    RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader,
+    ToonShader,
 };
+pub use procedural::generate_icosphere;
 pub use scene::{
     CelestialBody,
     surface::{

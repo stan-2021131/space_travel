@@ -73,6 +73,17 @@ fn test_invalid_configuration_rejections() {
         bad_surface.planets[0].surface_objects[0].fade_range = 60.0;
         assert!(bad_surface.validate(Path::new("test.toml")).is_err());
     }
+
+    // Subdivisions > 5
+    let mut bad_subdiv = valid.clone();
+    bad_subdiv.planets[0].subdivisions = 6;
+    assert!(bad_subdiv.validate(Path::new("test.toml")).is_err());
+
+    // Modelo vacío en planeta no-icosphere
+    let mut bad_model = valid.clone();
+    bad_model.planets[0].mesh_type = "model".to_string();
+    bad_model.planets[0].model_path = "   ".to_string();
+    assert!(bad_model.validate(Path::new("test.toml")).is_err());
 }
 
 #[test]

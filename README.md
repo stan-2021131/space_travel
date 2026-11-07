@@ -54,6 +54,8 @@ Para garantizar consistencia numérica sin parámetros sin uso:
 - **Multiplicación de matrices**: De derecha a izquierda: $v_{clip} = P \cdot V \cdot M \cdot v_{local}$.
 - **Rango de profundidad en NDC**: $z_{ndc} \in [-1.0, 1.0]$. Plano cercano en $-1.0$, plano lejano en $+1.0$.
 - **Devanado de caras frontales (*Winding*)**: Sentido antihorario (*Counter-Clockwise / CCW*).
+- **Rasterización Incremental de Pineda (1988)**: El rasterizador en CPU precalcula los gradientes analíticos constantes $\frac{\partial w_0}{\partial x}$, $\frac{\partial w_0}{\partial y}$, $\frac{\partial w_1}{\partial x}$, $\frac{\partial w_1}{\partial y}$ de las funciones baricéntricas. En lugar de evaluar 12 multiplicaciones y restas por píxel, avanza horizontalmente en $O(1)$ con una sola suma acumulativa (`w0 += dw0_dx`).
+- **Early-Z Estricto**: La prueba de profundidad se ejecuta inmediatamente al confirmar contención dentro del triángulo, descartando fragmentos ocluidos antes de calcular la costosa interpolación de perspectiva de normales, tangentes, posiciones de mundo y fragment shaders en CPU.
 
 ### Reglas de Muestreo de Texturas (`texture.rs`)
 - **Eje U (Horizontal)**: Muestreo con repetición / wrap ($u - \lfloor u \rfloor$) para resolver limpiamente la costura meridiana de la esfera.
@@ -153,7 +155,7 @@ cargo fmt --check
 # Análisis estático sin advertencias
 cargo clippy --all-targets
 
-# Suite completa de pruebas automatizadas (48 pruebas deterministas)
+# Suite completa de pruebas automatizadas (74 pruebas deterministas)
 cargo test
 ```
 
@@ -207,11 +209,11 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ### Formato Compacto (Predeterminado)
 ```text
-[60 FPS |  3.2 ms] obj 3 | tri 2146→1073 | nave 12.4 WU/s | rocoso +14.2 WU
+[60 FPS |  3.2 ms] obj 3 (cull 1) | tri 2146→1073 (cull 1508) | nave 12.4 WU/s | rocoso +14.2 WU
 ```
 - **FPS / Tiempo de CPU**: Cuadros por segundo y tiempo de rasterizado en milisegundos.
-- **obj**: Cantidad de modelos 3D renderizados en el cuadro (Sol, Planeta, Nave, Objetos de superficie).
-- **tri IN→RAST**: Triángulos procesados por el pipeline vs. triángulos efectivamente rasterizados tras clipping y backface culling.
+- **obj (cull)**: Modelos 3D renderizados vs. objetos omitidos en $O(1)$ fuera del frustum.
+- **tri IN→RAST (cull)**: Triángulos procesados vs. rasterizados vs. triángulos descartados antes de entrar al pipeline.
 - **nave**: Rapidez escalar actual de la nave en $\text{WU/s}$.
 - **cuerpo más cercano y distancia**: Nombre del cuerpo celeste más próximo y distancia en $\text{WU}$ a su superficie física ($+$ fuera de la superficie, $0$ en colisión).
 
@@ -219,13 +221,18 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 13. Pruebas Automatizadas
 
-El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con 74 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
-- **Pipeline de Renderizado** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, proyección al viewport y descarte.
-- **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista (verificando determinismo estricto con `seed = 67`, varianza con semillas distintas y rotación solidaria con el planeta), shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`) con rotación 3D dependiente de la orientación de cámara y determinismo de semilla, y shader de nave espacial (`ShipShader`) con luz física solar dinámica, brillo especular metálico Blinn-Phong y emisión base ambiental de seguridad.
+- **Pipeline de Renderizado y Paralelización** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos de posición, normal, tangente y UV), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, partición horizontal de pantalla en franjas disjuntas (*Scanline Slicing*) y verificación de equivalencia determinista idéntica píxel por píxel entre renderizado monohilo y multihilo en CPU.
+- **Descarte de Visión / Frustum Culling** (`frustum_tests.rs`): Extracción analítica de los 6 planos del frustum desde la matriz de Vista-Proyección ($VP = P \cdot V$) mediante Gribb-Hartmann, normalización de planos, distancias signadas, intersección analítica con esferas envolventes, descarte estricto en los 6 ejes y acumulación de métricas diagnósticas.
+- **Generación Procedural de Geometría** (`icosphere_tests.rs`): Esfera geodésica analítica en `src/procedural/` a partir de un icosaedro regular de 12 vértices compartidos y 20 caras, progresión exponencial exacta ($V = 10 \cdot 4^N + 2$, $F = 20 \cdot 4^N$), característica de Euler invariante ($V - E + F = 2$), devanado CCW hacia el exterior y coordenadas UV esféricas.
+- **Subdivisión Procedural de Malla** (`subdivision_tests.rs`): Operador de subdivisión en malla (`mesh.subdivide()`), cuadruplicación analítica de triángulos ($1 \to 4$), deduplicación estricta de vértices en aristas compartidas mediante hash-cache, e interpolación baricéntrica de posiciones, normales, coordenadas UV y tangentes ortonormales.
+- **Deformación Geométrica por Ruido** (`deformation_tests.rs`): Desplazamiento radial determinista por ruido 3D multi-octava con semilla universal (`seed = 67`), preservación de identidad con amplitud nula, varianza de relieve según semilla, recálculo analítico suave de normales por caras adyacentes y ortonormalidad estricta de tangentes.
+- **Mapeo de Normales en Software** (`normal_mapping_tests.rs`): Decodificación de espacio tangente a espacio de mundo mediante matriz ortonormal $TBN = [T \mid B \mid N]$, verificación de normal neutra $(128, 128, 255)$, redirección real de iluminación ante texels inclinados en tangente y fallback suave ante materiales sin textura de normales.
+- **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista, shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`), y shader de nave espacial (`ShipShader`).
 - **Objetos de Superficie y Distribución Esférica** (`surface_tests.rs`): Distribución esférica uniforme de Fibonacci con semilla determinista, ortonormalidad estricta de la base local y alineación perpendicular a la normal radial de la esfera curva, descarte por distancia $O(1)$ con transición cúbica suave (*smoothstep*), enraizamiento geométrico universal automático por sagita esférica (`calculate_surface_embedding`) para evitar flotación sobre terreno curvo/facetas, carga íntegra de modelo de montaña OBJ/MTL y parseo declarativo en TOML.
 - **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
-- **Configuración y Diagnósticos** (`config_and_diagnostic_tests.rs`): Carga y validación exhaustiva de `solar_system.toml` con semilla universal, rechazo de parámetros no finitos o duplicados, y ciclado de modos diagnósticos con `F2` y `F3`.
+- **Configuración y Diagnósticos** (`config_and_diagnostic_tests.rs`): Carga y validación exhaustiva de `solar_system.toml` con semilla universal, rechazo de parámetros no finitos o duplicados, generación de cuerpos procedurales por configuración TOML y ciclado de modos diagnósticos con `F2` y `F3`.
 
 ---
 
@@ -240,8 +247,14 @@ El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularm
   - Implementación del shader universal de cel-shading estilo anime (`ToonShader`).
   - Implementación del shader procedural de fondo cósmico estelar y nebulosas en CPU (`SkyShader`).
   - Implementación del shader de fuselaje metálico para la nave espacial con iluminación solar real (`ShipShader`).
+  - Implementación del generador procedural de esferas geodésicas en módulo dedicado (`src/procedural/icosphere.rs`).
+  - Implementación del operador de subdivisión procedural de geometría en malla con deduplicación de aristas compartidas e interpolación de atributos (`Mesh::subdivide`).
+  - Implementación del modificador geométrico universal de deformación por ruido 3D con recálculo analítico de normales y semilla universal (`Mesh::deform`).
+  - Implementación del sistema de Mapeo de Normales (Normal Mapping) con cálculo analítico de base $TBN$, interpolación afín/perspectiva en el rasterizador y `NormalMappedShader`.
   - Implementación del sistema de distribución procedural de objetos en superficie esférica con orientación curva, enraizamiento geométrico universal y descarte por distancia suave (`src/scene/surface.rs`).
-  - Batería de 48 pruebas deterministas modulares y documentación técnica.
+  - Implementación del sistema de Frustum Culling analítico mediante extracción de planos Gribb-Hartmann y descarte esférico multinivel (`src/camera.rs`).
+  - Implementación del sistema de paralelización de renderizado en CPU sin dependencias externas mediante partición horizontal de pantalla en franjas contiguas disjuntas (*Scanline Slicing*) con `std::thread::scope` en rasterización y `SkyShader`.
+  - Batería de 74 pruebas deterministas modulares y documentación técnica.
 
 ---
 
@@ -257,15 +270,26 @@ El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularm
 | **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica |
 | **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **18** | **Reclamado**: `ProceduralRockShader` + `ToonShader` + `ShipShader` (6 pts c/u) |
 | **Renderizado** | Shader animado cuyo efecto cambia con el tiempo | 8 | **8** | **Reclamado**: `PlasmaShader` solar con armónicos animados con tiempo ($dt$) |
-| **Renderizado** | Mapeo de normales en renderer por software | 8 | **0** | No iniciado |
-| **Renderizado** | Deformación de geometría mediante ruido u otra función | 10 | **0** | No iniciado |
-| **Renderizado** | Generación o subdivisión procedural de geometría previa a rasterizar | 10 | **0** | No iniciado |
+| **Renderizado** | Mapeo de normales en renderer por software | 8 | **8** | **Reclamado**: Base ortonormal $TBN$ en CPU, interpolación en rasterizador y `NormalMappedShader` |
+| **Renderizado** | Deformación de geometría mediante ruido u otra función | 10 | **10** | **Reclamado**: Modificador `deform` con ruido 3D determinista (`seed = 67`) y recálculo analítico de normales |
+| **Renderizado** | Generación o subdivisión procedural de geometría previa a rasterizar | 10 | **10** | **Reclamado**: Generación de esfera geodésica analítica en `src/procedural/` y operador `subdivide()` |
 | **Navegación** | Modo de control local para rodear planeta cercano | 8 | **0** | No iniciado |
 | **Navegación** | Aceleración, frenado y giro progresivos | 8 | **8** | **Reclamado**: Cinemática arcade en `physics.rs` con empuje, drag exponencial y Euler |
 | **Navegación** | Atracción gravitatoria de planetas | 10 | **0** | No iniciado |
 | **Navegación** | Colisión básica que impide atravesar planetas | 4 | **4** | **Reclamado**: Resolución analítica inelástica con conservación tangencial |
-| **Rendimiento** | Descarte de objetos fuera de la vista (Frustum Culling) | 7 | **0** | No iniciado |
+| **Rendimiento** | Descarte de objetos fuera de la vista (Frustum Culling) | 7 | **7** | **Reclamado**: Extracción de 6 planos (Gribb-Hartmann) y descarte esférico multinivel |
 | **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0** | Pendiente (descarte $O(1)$ listo; pendiente modelo simplificado) |
 | **Presentación** | Coherencia visual y composición de la escena | 5 | **0** | No iniciado |
 | **Presentación** | Claridad de la experiencia y controles | 5 | **0** | No iniciado |
-| **TOTAL** | | **200 (Máx. 100)** | **68** | **68 pts formalmente implementados y demostrables en vivo** |
+| **TOTAL** | | **200 (Máx. 100)** | **103** | **103 pts formalmente implementados y demostrables en vivo (100% de la nota máxima)** |
+
+---
+
+## 16. Recursos Externos y Modelos
+
+| Recurso | Archivo(s) | Uso en el Proyecto | Procedencia |
+|---|---|---|---|
+| **Nave Espacial** | `assets/models/nave.obj` | Vehículo del jugador para exploración interactiva | Modelo base libre en formato OBJ adaptado para escala de simulación |
+| **Montañas** | `assets/models/objects/mountain/` | Objetos de relieve distribuidos sobre superficie esférica | Geometría de entorno en formato OBJ con archivo MTL asociado |
+| **Planeta Rocoso** | `assets/models/rocky/` | Malla esférica, textura difusa y mapa de normales en espacio tangente | Esfera poligonal UV con texturas PNG (albedo y normal map $TBN$) |
+| **Sol** | `assets/models/sun/` | Estrella central emisora de luz y origen de coordenadas | Malla esférica UV evaluada con `PlasmaShader` animado |

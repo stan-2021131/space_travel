@@ -4,7 +4,13 @@ use space_travel::pipeline::clipping::{
 };
 
 fn dummy_clip_vertex(clip_pos: Vec4) -> ClipVertex {
-    ClipVertex::new(clip_pos, Vec3::zero(), Vec3::up(), Vec2::zero())
+    ClipVertex::new(
+        clip_pos,
+        Vec3::zero(),
+        Vec3::up(),
+        Vec3::new(1.0, 0.0, 0.0),
+        Vec2::zero(),
+    )
 }
 
 #[test]

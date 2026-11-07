@@ -8,9 +8,9 @@ use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
 use crate::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
 use crate::pipeline::{
-    DepthDebugShader, EmissiveShader, FragmentShader, NormalsDebugShader, PlasmaShader,
-    ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader,
-    SoftwareRenderer, TexturedDiffuseShader, ToonShader,
+    DepthDebugShader, EmissiveShader, FragmentShader, NormalMappedShader, NormalsDebugShader,
+    PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader,
+    SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
     CelestialBody,
@@ -53,6 +53,7 @@ pub struct App {
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
+    normal_mapped_shader: NormalMappedShader,
     rock_shader: ProceduralRockShader,
     plasma_shader: PlasmaShader,
     ship_shader: ShipShader,
@@ -130,13 +131,44 @@ impl App {
 
         let mut planets = Vec::new();
         for p_cfg in &config.planets {
-            println!(
-                "[RECURSOS] Cargando planeta '{}': {}",
-                p_cfg.id, p_cfg.model_path
-            );
-            let p_mesh = Arc::new(Mesh::load_from_obj(Path::new(&p_cfg.model_path))?);
-            let p_geo_radius = p_mesh.geometric_radius().max(1e-4);
-            let p_scale = p_cfg.radius / p_geo_radius;
+            let mut mesh = if p_cfg.mesh_type == "icosphere" {
+                println!(
+                    "[PROCEDURAL] Generando esfera geodésica para '{}' (radio: {}, subdiv: {})",
+                    p_cfg.id, p_cfg.radius, p_cfg.subdivisions
+                );
+                crate::procedural::generate_icosphere(p_cfg.radius, p_cfg.subdivisions)
+            } else {
+                println!(
+                    "[RECURSOS] Cargando cuerpo celeste '{}': {}",
+                    p_cfg.id, p_cfg.model_path
+                );
+                let mut m = Mesh::load_from_obj(Path::new(&p_cfg.model_path))?;
+                // Subdivisión procedural de geometría previa a rasterizar (+10 pts)
+                for _ in 0..p_cfg.subdivisions {
+                    m.subdivide();
+                }
+                m
+            };
+
+            // Deformación geométrica por ruido con semilla universal (+10 pts)
+            if p_cfg.deformation_amplitude.abs() > 1e-6 {
+                println!(
+                    "[GEOMETRÍA] Aplicando deformación procedural a '{}' (amp: {}, freq: {}, seed universal: {})",
+                    p_cfg.id,
+                    p_cfg.deformation_amplitude,
+                    p_cfg.deformation_frequency,
+                    config.simulation.seed
+                );
+                mesh.deform(
+                    p_cfg.deformation_amplitude,
+                    p_cfg.deformation_frequency,
+                    config.simulation.seed,
+                );
+            }
+
+            let geo_radius = mesh.geometric_radius().max(1e-4);
+            let p_scale = p_cfg.radius / geo_radius;
+            let p_mesh = Arc::new(mesh);
 
             let mut surface_groups = Vec::new();
             for s_cfg in &p_cfg.surface_objects {
@@ -214,6 +246,7 @@ impl App {
         let plasma_shader = PlasmaShader::new();
         let toon_shader = ToonShader::new(sun_body.position, camera.eye);
         let ship_shader = ShipShader::new(sun_body.position, camera.eye);
+        let normal_mapped_shader = NormalMappedShader::new(sun_body.position, camera.eye);
         let mut enemy_shader = ShipShader::new(sun_body.position, camera.eye);
         enemy_shader.ambient_intensity = 0.38;
         enemy_shader.specular_power = 18.0;
@@ -238,6 +271,7 @@ impl App {
             accumulator: 0.0,
             shader_mode: ShaderMode::Normal,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
+            normal_mapped_shader,
             rock_shader,
             plasma_shader,
             ship_shader,
@@ -566,6 +600,7 @@ impl App {
         self.depth_buffer.clear();
 
         let vp_matrix = self.camera.view_projection_matrix();
+        let frustum = self.camera.frustum();
         self.toon_shader.camera_pos = self.camera.eye;
         self.toon_shader.light_pos = self.sun_body.position;
         self.ship_shader.camera_pos = self.camera.eye;
@@ -575,35 +610,61 @@ impl App {
         self.plasma_shader.sun_center = self.sun_body.position;
         self.rock_shader.light_pos = self.sun_body.position;
         self.planet_shader.light_pos = self.sun_body.position;
+        self.normal_mapped_shader.light_pos = self.sun_body.position;
+        self.normal_mapped_shader.camera_pos = self.camera.eye;
 
         let mut target = RenderTarget {
             framebuffer: &mut self.framebuffer,
             depth_buffer: &mut self.depth_buffer,
         };
 
-        // 1. Sol (Shader animado de plasma)
-        let sun_model = self.sun_body.model_matrix();
-        let sun_rot = self.sun_body.rotation_matrix();
-        self.toon_shader.is_sun = true;
-        Self::draw_mesh(
-            &mut self.renderer,
-            self.shader_mode,
-            &self.depth_shader,
-            &self.normals_shader,
-            &self.toon_shader,
-            &self.plasma_shader,
-            &self.sun_body.mesh,
-            &sun_model,
-            &sun_rot,
-            &vp_matrix,
-            &self.sun_body.material,
-            &mut target,
-            stats,
-        );
-        self.toon_shader.is_sun = false;
+        // 1. Sol (Shader animado de plasma con Frustum Culling)
+        if !frustum.intersects_sphere(self.sun_body.position, self.sun_body.radius) {
+            stats.objetos_descartados_frustum += 1;
+            stats.triangulos_descartados_frustum += self.sun_body.mesh.indices.len() / 3;
+        } else {
+            let sun_model = self.sun_body.model_matrix();
+            let sun_rot = self.sun_body.rotation_matrix();
+            self.toon_shader.is_sun = true;
+            Self::draw_mesh(
+                &mut self.renderer,
+                self.shader_mode,
+                &self.depth_shader,
+                &self.normals_shader,
+                &self.toon_shader,
+                &self.plasma_shader,
+                &self.sun_body.mesh,
+                &sun_model,
+                &sun_rot,
+                &vp_matrix,
+                &self.sun_body.material,
+                &mut target,
+                stats,
+            );
+            self.toon_shader.is_sun = false;
+        }
 
-        // 2. Planetas (Shader procedural con semilla o textura)
+        // 2. Planetas (con Frustum Culling a nivel de astro y de corteza)
         for planet in &self.planets {
+            let max_surface_extent = planet
+                .surface_groups
+                .iter()
+                .map(|g| g.mesh.aabb.size().y * g.instances.first().map_or(0.0, |i| i.base_scale))
+                .fold(0.0f32, f32::max);
+            let planet_cull_radius = planet.radius + max_surface_extent;
+            let planet_visible = frustum.intersects_sphere(planet.position, planet_cull_radius);
+            if !planet_visible {
+                // Si el planeta completo está fuera de visión, descartarlo y omitir todas sus montañas
+                stats.objetos_descartados_frustum += 1;
+                stats.triangulos_descartados_frustum += planet.mesh.indices.len() / 3;
+                for group in &planet.surface_groups {
+                    stats.objetos_descartados_frustum += group.instances.len();
+                    stats.triangulos_descartados_frustum +=
+                        (group.mesh.indices.len() / 3) * group.instances.len();
+                }
+                continue;
+            }
+
             let p_model = planet.model_matrix();
             let p_rot = planet.rotation_matrix();
             self.rock_shader.body_center = planet.position;
@@ -616,6 +677,24 @@ impl App {
                     &self.normals_shader,
                     &self.toon_shader,
                     &self.rock_shader,
+                    &planet.mesh,
+                    &p_model,
+                    &p_rot,
+                    &vp_matrix,
+                    &planet.material,
+                    &mut target,
+                    stats,
+                );
+            } else if planet.shader_type == "normal_mapped"
+                || (planet.shader_type == "texture" && planet.material.normal_texture.is_some())
+            {
+                Self::draw_mesh(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.normal_mapped_shader,
                     &planet.mesh,
                     &p_model,
                     &p_rot,
@@ -642,7 +721,7 @@ impl App {
                 );
             }
 
-            // 2.1 Objetos de superficie del planeta (con descarte por distancia, transición suave y horizonte)
+            // 2.1 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
             for group in &planet.surface_groups {
                 let dist_to_planet_center = (self.camera.eye - planet.position).length();
                 let dist_to_surface = (dist_to_planet_center - planet.radius).max(0.0);
@@ -660,20 +739,28 @@ impl App {
 
                 let p_rot = planet.rotation_matrix();
                 let p_trans = Mat4::from_translation(planet.position);
+                let mesh_extent = group.mesh.aabb.max_extent();
 
                 for instance in &group.instances {
-                    // Descarte de horizonte a media/larga distancia desde el centro del planeta.
-                    // En proximidad cercana (dist_to_surface <= 35.0) se desactiva para que ningún
-                    // objeto visible o en el horizonte cercano desaparezca prematuramente.
-                    if dist_to_surface > 35.0 {
-                        let world_normal = p_rot.transform_direction(instance.local_normal);
-                        let to_cam_from_center = self.camera.eye - planet.position;
-                        if world_normal.dot(to_cam_from_center) < -0.1 {
-                            continue;
-                        }
+                    // Descarte de cara oculta/horizonte del planeta: si el objeto se ubica en el hemisferio
+                    // posterior respecto a la cámara, el cuerpo sólido opaco del planeta lo oculta por completo.
+                    let world_normal = p_rot.transform_direction(instance.local_normal);
+                    let to_cam_from_center = self.camera.eye - planet.position;
+                    if world_normal.dot(to_cam_from_center) < -0.15 {
+                        continue;
                     }
 
+                    // Frustum culling individual para cada montaña en pantalla
                     let current_scale = instance.base_scale * fade;
+                    let instance_world_pos =
+                        planet.position + p_rot.transform_point(instance.local_pos);
+                    let instance_radius = mesh_extent * current_scale;
+                    if !frustum.intersects_sphere(instance_world_pos, instance_radius) {
+                        stats.objetos_descartados_frustum += 1;
+                        stats.triangulos_descartados_frustum += group.mesh.indices.len() / 3;
+                        continue;
+                    }
+
                     let obj_model = p_trans
                         * p_rot
                         * Mat4::from_translation(instance.local_pos)
@@ -700,9 +787,16 @@ impl App {
             }
         }
 
-        // 3. Enemigos y proyectiles. En modo pacífico ambas colecciones están vacías.
+        // 3. Enemigos y proyectiles (con Frustum Culling). En modo pacífico ambas colecciones están vacías.
         let enemy_center = self.enemy_mesh.aabb.center();
+        let enemy_radius = self.enemy_mesh.geometric_radius() * self.enemy_scale;
         for enemy in &self.combat.enemies {
+            if !frustum.intersects_sphere(enemy.position, enemy_radius) {
+                stats.objetos_descartados_frustum += 1;
+                stats.triangulos_descartados_frustum += self.enemy_mesh.indices.len() / 3;
+                continue;
+            }
+
             // El OBJ enemigo fue exportado con la punta hacia +X. La corrección
             // configurable alinea esa punta con la dirección exacta a la nave.
             let enemy_rotation = enemy.rotation_matrix()
@@ -729,6 +823,12 @@ impl App {
         }
 
         for projectile in &self.combat.projectiles {
+            if !frustum.intersects_sphere(projectile.position, projectile.radius) {
+                stats.objetos_descartados_frustum += 1;
+                stats.triangulos_descartados_frustum += self.projectile_mesh.indices.len() / 3;
+                continue;
+            }
+
             let projectile_model = Mat4::from_translation(projectile.position)
                 * Mat4::uniform_scaling(projectile.radius);
             let material = match projectile.owner {
@@ -752,29 +852,35 @@ impl App {
             );
         }
 
-        // 4. Nave
-        let ship_center = self.ship_mesh.aabb.center();
-        let ship_model = Mat4::from_translation(self.ship_state.position)
-            * self.ship_state.rotation_matrix()
-            * Mat4::uniform_scaling(self.ship_scale)
-            * Mat4::from_translation(-ship_center);
-        let ship_rot = self.ship_state.rotation_matrix();
+        // 4. Nave (con Frustum Culling)
+        let ship_radius = self.ship_mesh.geometric_radius() * self.ship_scale;
+        if !frustum.intersects_sphere(self.ship_state.position, ship_radius) {
+            stats.objetos_descartados_frustum += 1;
+            stats.triangulos_descartados_frustum += self.ship_mesh.indices.len() / 3;
+        } else {
+            let ship_center = self.ship_mesh.aabb.center();
+            let ship_model = Mat4::from_translation(self.ship_state.position)
+                * self.ship_state.rotation_matrix()
+                * Mat4::uniform_scaling(self.ship_scale)
+                * Mat4::from_translation(-ship_center);
+            let ship_rot = self.ship_state.rotation_matrix();
 
-        Self::draw_mesh(
-            &mut self.renderer,
-            self.shader_mode,
-            &self.depth_shader,
-            &self.normals_shader,
-            &self.toon_shader,
-            &self.ship_shader,
-            &self.ship_mesh,
-            &ship_model,
-            &ship_rot,
-            &vp_matrix,
-            &self.ship_mesh.material,
-            &mut target,
-            stats,
-        );
+            Self::draw_mesh(
+                &mut self.renderer,
+                self.shader_mode,
+                &self.depth_shader,
+                &self.normals_shader,
+                &self.toon_shader,
+                &self.ship_shader,
+                &self.ship_mesh,
+                &ship_model,
+                &ship_rot,
+                &vp_matrix,
+                &self.ship_mesh.material,
+                &mut target,
+                stats,
+            );
+        }
 
         // Las barras se dibujan al final como overlay del framebuffer CPU.
         Self::draw_entity_health_bars(

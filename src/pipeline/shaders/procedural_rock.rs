@@ -2,6 +2,8 @@ use super::{FragmentInput, FragmentShader};
 use crate::buffer::Color;
 use crate::math::Vec3;
 
+const INV_U32_MAX: f32 = 1.0 / 4294967295.0;
+
 /// Shader procedural para superficies planetarias rocosas sin necesidad de texturas de imagen.
 ///
 /// Sintetiza analíticamente la geología mediante ruido determinista tridimensional evaluado
@@ -27,39 +29,56 @@ impl ProceduralRockShader {
     }
 
     /// Hash pseudoaleatorio determinista en el espacio de celda entera tridimensional.
-    #[inline]
+    #[inline(always)]
     fn hash3(x: i32, y: i32, z: i32, seed: u32) -> f32 {
         let mut h = (x as u32).wrapping_mul(374761393)
             ^ (y as u32).wrapping_mul(668265263)
             ^ (z as u32).wrapping_mul(951214213)
             ^ seed.wrapping_mul(1103515245);
         h = (h ^ (h >> 13)).wrapping_mul(1274126177);
-        (h as f32) / (u32::MAX as f32)
+        (h as f32) * INV_U32_MAX
     }
 
     /// Ruido de valor continuo tridimensional con interpolación cúbica (smoothstep).
+    /// Optimizado: precomputa factores de coordenadas por eje y reutiliza componentes enteros.
+    #[inline]
     fn value_noise(p: Vec3, seed: u32) -> f32 {
         let ix = p.x.floor() as i32;
         let iy = p.y.floor() as i32;
         let iz = p.z.floor() as i32;
 
-        let fx = p.x - p.x.floor();
-        let fy = p.y - p.y.floor();
-        let fz = p.z - p.z.floor();
+        let fx = p.x - ix as f32;
+        let fy = p.y - iy as f32;
+        let fz = p.z - iz as f32;
 
         // Curva cúbica de interpolación: 3t^2 - 2t^3
         let ux = fx * fx * (3.0 - 2.0 * fx);
         let uy = fy * fy * (3.0 - 2.0 * fy);
         let uz = fz * fz * (3.0 - 2.0 * fz);
 
-        let c000 = Self::hash3(ix, iy, iz, seed);
-        let c100 = Self::hash3(ix + 1, iy, iz, seed);
-        let c010 = Self::hash3(ix, iy + 1, iz, seed);
-        let c110 = Self::hash3(ix + 1, iy + 1, iz, seed);
-        let c001 = Self::hash3(ix, iy, iz + 1, seed);
-        let c101 = Self::hash3(ix + 1, iy, iz + 1, seed);
-        let c011 = Self::hash3(ix, iy + 1, iz + 1, seed);
-        let c111 = Self::hash3(ix + 1, iy + 1, iz + 1, seed);
+        // Precomputamos las multiplicaciones de los ejes por separado para evitar recalcularlas en las 8 esquinas
+        let hx0 = (ix as u32).wrapping_mul(374761393);
+        let hx1 = ((ix + 1) as u32).wrapping_mul(374761393);
+        let hy0 = (iy as u32).wrapping_mul(668265263);
+        let hy1 = ((iy + 1) as u32).wrapping_mul(668265263);
+        let hz0 = (iz as u32).wrapping_mul(951214213);
+        let hz1 = ((iz + 1) as u32).wrapping_mul(951214213);
+        let hs = seed.wrapping_mul(1103515245);
+
+        #[inline(always)]
+        fn mix_hash(h_in: u32) -> f32 {
+            let h = (h_in ^ (h_in >> 13)).wrapping_mul(1274126177);
+            (h as f32) * INV_U32_MAX
+        }
+
+        let c000 = mix_hash(hx0 ^ hy0 ^ hz0 ^ hs);
+        let c100 = mix_hash(hx1 ^ hy0 ^ hz0 ^ hs);
+        let c010 = mix_hash(hx0 ^ hy1 ^ hz0 ^ hs);
+        let c110 = mix_hash(hx1 ^ hy1 ^ hz0 ^ hs);
+        let c001 = mix_hash(hx0 ^ hy0 ^ hz1 ^ hs);
+        let c101 = mix_hash(hx1 ^ hy0 ^ hz1 ^ hs);
+        let c011 = mix_hash(hx0 ^ hy1 ^ hz1 ^ hs);
+        let c111 = mix_hash(hx1 ^ hy1 ^ hz1 ^ hs);
 
         let x00 = c000 + ux * (c100 - c000);
         let x10 = c010 + ux * (c110 - c010);
@@ -77,8 +96,9 @@ impl FragmentShader for ProceduralRockShader {
     fn shade(&self, input: &FragmentInput<'_>) -> Color {
         // Dirección radial esférica continua desde el centro del planeta para eliminar facetas
         let offset = input.world_pos - self.body_center;
-        let n = if offset.length_squared() > 1e-4 {
-            offset.normalize()
+        let len_sq = offset.length_squared();
+        let n = if len_sq > 1e-4 {
+            offset * (1.0 / len_sq.sqrt())
         } else {
             input.world_normal.normalize()
         };
@@ -93,32 +113,41 @@ impl FragmentShader for ProceduralRockShader {
 
         // 2. Anillos y crestas de cráteres de impacto (ridged noise a media frecuencia)
         let crater_raw = Self::value_noise(local_n * 7.5, self.seed.wrapping_add(10));
-        let crater_rim = (1.0 - (crater_raw - 0.5).abs() * 2.0).powi(2); // Crestas afiladas
+        let rim_base = 1.0 - (crater_raw - 0.5).abs() * 2.0;
+        let crater_rim = rim_base * rim_base; // Crestas afiladas sin llamar a powi(2)
 
         // 3. Micro-aspereza y granularidad de grava/roca (alta frecuencia)
-        let grain = Self::value_noise(local_n * 26.0, self.seed.wrapping_add(20));
+        // Al ser grano fino (escala 26.0), una celda de hash 3D aporta la dispersión granular sin requerir
+        // el costo de una interpolación cúbica trilineal completa de 8 esquinas.
+        let gp = local_n * 26.0;
+        let grain = Self::hash3(
+            gp.x.floor() as i32,
+            gp.y.floor() as i32,
+            gp.z.floor() as i32,
+            self.seed.wrapping_add(20),
+        );
 
         // Combinación estratigráfica
         let rock_val = (0.50 * maria + 0.35 * crater_rim + 0.15 * grain).clamp(0.0, 1.0);
 
-        // Paleta geológica mineral de alto contraste:
-        // - [0.00 .. 0.40]: Basalto volcánico y cuencas oscuras
-        // - [0.40 .. 0.72]: Arenisca ocre/terracota marciana
-        // - [0.72 .. 1.00]: Crestas de impacto claras, cuarzo y regolito blanquecino
+        // Paleta geológica mineral de alto contraste (con factores inversos precalculados):
+        // - [0.00 .. 0.40]: Basalto volcánico y cuencas oscuras (factor 1.0 / 0.40 = 2.5)
+        // - [0.40 .. 0.72]: Arenisca ocre/terracota marciana (factor 1.0 / 0.32 = 3.125)
+        // - [0.72 .. 1.00]: Crestas de impacto claras, cuarzo y regolito blanquecino (factor 1.0 / 0.28 = 3.5714285)
         let (r, g, b) = if rock_val < 0.40 {
-            let t = rock_val / 0.40;
+            let t = rock_val * 2.5;
             let r = 0.12 + 0.16 * t;
             let g = 0.10 + 0.10 * t;
             let b = 0.09 + 0.08 * t;
             (r, g, b)
         } else if rock_val < 0.72 {
-            let t = (rock_val - 0.40) / 0.32;
+            let t = (rock_val - 0.40) * 3.125;
             let r = 0.28 + 0.34 * t;
             let g = 0.20 + 0.14 * t;
             let b = 0.17 + 0.06 * t;
             (r, g, b)
         } else {
-            let t = (rock_val - 0.72) / 0.28;
+            let t = (rock_val - 0.72) * 3.5714285;
             let r = 0.62 + 0.28 * t;
             let g = 0.48 + 0.36 * t;
             let b = 0.35 + 0.37 * t;

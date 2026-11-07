@@ -67,6 +67,8 @@ pub struct FrameStats {
     pub triangulos_rasterizados: usize,
     pub fragmentos_evaluados: usize,
     pub fragmentos_aceptados_depth: usize,
+    pub objetos_descartados_frustum: usize,
+    pub triangulos_descartados_frustum: usize,
     pub frame_time_ms: f32,
 }
 
@@ -122,6 +124,8 @@ impl StatsTracker {
         self.accumulated.triangulos_rasterizados += current.triangulos_rasterizados;
         self.accumulated.fragmentos_evaluados += current.fragmentos_evaluados;
         self.accumulated.fragmentos_aceptados_depth += current.fragmentos_aceptados_depth;
+        self.accumulated.objetos_descartados_frustum += current.objetos_descartados_frustum;
+        self.accumulated.triangulos_descartados_frustum += current.triangulos_descartados_frustum;
         self.accumulated.frame_time_ms += current.frame_time_ms;
 
         let elapsed = self.last_print_time.elapsed().as_secs_f32();
@@ -138,16 +142,20 @@ impl StatsTracker {
                 let avg_rast_tris = self.accumulated.triangulos_rasterizados / count;
                 let avg_eval_frags = self.accumulated.fragmentos_evaluados / count;
                 let avg_depth_frags = self.accumulated.fragmentos_aceptados_depth / count;
+                let avg_cull_objs = self.accumulated.objetos_descartados_frustum / count;
+                let avg_cull_tris = self.accumulated.triangulos_descartados_frustum / count;
 
                 match self.display_mode {
                     StatsDisplayMode::Compact => {
                         println!(
-                            "[{:2.0} FPS | {:4.1} ms] obj {} | tri {}→{} | nave {:4.1} WU/s | {} {:+5.1} WU",
+                            "[{:2.0} FPS | {:4.1} ms] obj {} (cull {}) | tri {}→{} (cull {}) | nave {:4.1} WU/s | {} {:+5.1} WU",
                             fps,
                             avg_frame_time,
                             avg_models,
+                            avg_cull_objs,
                             avg_in_tris,
                             avg_rast_tris,
+                            avg_cull_tris,
                             ship_speed_wu,
                             nearest_body_name,
                             surface_dist_wu
@@ -155,11 +163,13 @@ impl StatsTracker {
                     }
                     StatsDisplayMode::Detailed => {
                         println!(
-                            "[STATS DETALLADO] FPS: {:5.1} | Frame: {:5.2} ms | Objs: {} | Tris In: {:4} | Clip (+{:2}, -{:2}) | Backface -{:4} | Rast: {:4} | Frags: {:6} -> Depth: {:6} | Nave: {:4.1} WU/s | Prox: {} ({:+5.1} WU)",
+                            "[STATS DETALLADO] FPS: {:5.1} | Frame: {:5.2} ms | Objs: {} (Cull: {}) | Tris In: {:4} (Cull: {:4}) | Clip (+{:2}, -{:2}) | Backface -{:4} | Rast: {:4} | Frags: {:6} -> Depth: {:6} | Nave: {:4.1} WU/s | Prox: {} ({:+5.1} WU)",
                             fps,
                             avg_frame_time,
                             avg_models,
+                            avg_cull_objs,
                             avg_in_tris,
+                            avg_cull_tris,
                             avg_clip_gen,
                             avg_clip_disc,
                             avg_backface_disc,
