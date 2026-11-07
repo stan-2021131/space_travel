@@ -24,9 +24,10 @@ pub use math::{Mat4, Transform, Vec2, Vec3, Vec4};
 pub use mesh::{AABB, Mesh, Vertex};
 pub use physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
 pub use pipeline::{
-    DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput, FragmentShader,
-    NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget,
-    ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
+    AlienEnergyShader, DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput,
+    FragmentShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext,
+    RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader,
+    ToonShader,
 };
 pub use scene::{
     CelestialBody,

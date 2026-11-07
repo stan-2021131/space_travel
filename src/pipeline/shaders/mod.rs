@@ -1,3 +1,4 @@
+pub mod alien_energy;
 pub mod debug;
 pub mod diffuse;
 pub mod plasma;
@@ -10,6 +11,7 @@ use crate::buffer::Color;
 use crate::material::Material;
 use crate::math::{Vec2, Vec3};
 
+pub use alien_energy::AlienEnergyShader;
 pub use debug::{DepthDebugShader, NormalsDebugShader};
 pub use diffuse::{DiffuseShader, EmissiveShader, TexturedDiffuseShader};
 pub use plasma::PlasmaShader;

@@ -8,9 +8,9 @@ use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
 use crate::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
 use crate::pipeline::{
-    DepthDebugShader, EmissiveShader, FragmentShader, NormalsDebugShader, PlasmaShader,
-    ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader,
-    SoftwareRenderer, TexturedDiffuseShader, ToonShader,
+    AlienEnergyShader, DepthDebugShader, EmissiveShader, FragmentShader, NormalsDebugShader,
+    PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader,
+    SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
     CelestialBody,
@@ -56,7 +56,7 @@ pub struct App {
     rock_shader: ProceduralRockShader,
     plasma_shader: PlasmaShader,
     ship_shader: ShipShader,
-    enemy_shader: ShipShader,
+    enemy_shader: AlienEnergyShader,
     enemy_material: Material,
     projectile_shader: EmissiveShader,
     player_projectile_material: Material,
@@ -214,9 +214,7 @@ impl App {
         let plasma_shader = PlasmaShader::new();
         let toon_shader = ToonShader::new(sun_body.position, camera.eye);
         let ship_shader = ShipShader::new(sun_body.position, camera.eye);
-        let mut enemy_shader = ShipShader::new(sun_body.position, camera.eye);
-        enemy_shader.ambient_intensity = 0.38;
-        enemy_shader.specular_power = 18.0;
+        let enemy_shader = AlienEnergyShader::new(sun_body.position, camera.eye);
         let sky_shader = SkyShader::new(config.simulation.seed);
 
         Ok(Self {
@@ -437,6 +435,7 @@ impl App {
 
         // Actualización del tiempo para shaders animados
         self.plasma_shader.set_time(self.sim_time);
+        self.enemy_shader.set_time(self.sim_time);
 
         // Movimiento de la nave
         self.ship_state.update(input, &self.config.ship, dt);

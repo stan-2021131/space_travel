@@ -100,6 +100,7 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
 - **`ToonShader`**: Cel-shading estilo anime con cuantización en bandas de color discretas y silueta exterior (*rim lighting*).
 - **`SkyShader`**: Fondo estelar infinito procedural en CPU sensible a la rotación 3D de la cámara.
 - **`ShipShader`**: Fuselaje metálico para la nave espacial con iluminación solar dinámica en tiempo real y componente especular Blinn-Phong.
+- **`AlienEnergyShader`**: Recubrimiento animado de las naves enemigas con iluminación solar, borde Fresnel cian y bandas energéticas que avanzan con el tiempo de simulación. Sus parámetros `scan_speed`, `scan_frequency` y `rim_power` permiten modificar el efecto durante la demostración.
 
 ---
 
@@ -153,7 +154,7 @@ cargo fmt --check
 # Análisis estático sin advertencias
 cargo clippy --all-targets
 
-# Suite completa de pruebas automatizadas (48 pruebas deterministas)
+# Suite completa de pruebas automatizadas (66 pruebas deterministas)
 cargo test
 ```
 
@@ -219,10 +220,10 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 13. Pruebas Automatizadas
 
-El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con 66 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
 - **Pipeline de Renderizado** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, proyección al viewport y descarte.
-- **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista (verificando determinismo estricto con `seed = 67`, varianza con semillas distintas y rotación solidaria con el planeta), shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`) con rotación 3D dependiente de la orientación de cámara y determinismo de semilla, y shader de nave espacial (`ShipShader`) con luz física solar dinámica, brillo especular metálico Blinn-Phong y emisión base ambiental de seguridad.
+- **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista (verificando determinismo estricto con `seed = 67`, varianza con semillas distintas y rotación solidaria con el planeta), shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`) con rotación 3D dependiente de la orientación de cámara y determinismo de semilla, shader de nave espacial (`ShipShader`) con luz física solar dinámica y brillo especular metálico, y shader alienígena (`AlienEnergyShader`) con animación determinista y borde Fresnel dependiente del observador.
 - **Objetos de Superficie y Distribución Esférica** (`surface_tests.rs`): Distribución esférica uniforme de Fibonacci con semilla determinista, ortonormalidad estricta de la base local y alineación perpendicular a la normal radial de la esfera curva, descarte por distancia $O(1)$ con transición cúbica suave (*smoothstep*), enraizamiento geométrico universal automático por sagita esférica (`calculate_surface_embedding`) para evitar flotación sobre terreno curvo/facetas, carga íntegra de modelo de montaña OBJ/MTL y parseo declarativo en TOML.
 - **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
 - **Configuración y Diagnósticos** (`config_and_diagnostic_tests.rs`): Carga y validación exhaustiva de `solar_system.toml` con semilla universal, rechazo de parámetros no finitos o duplicados, y ciclado de modos diagnósticos con `F2` y `F3`.
@@ -240,8 +241,9 @@ El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularm
   - Implementación del shader universal de cel-shading estilo anime (`ToonShader`).
   - Implementación del shader procedural de fondo cósmico estelar y nebulosas en CPU (`SkyShader`).
   - Implementación del shader de fuselaje metálico para la nave espacial con iluminación solar real (`ShipShader`).
+  - Implementación del recubrimiento energético alienígena animado con bandas móviles y borde Fresnel (`AlienEnergyShader`).
   - Implementación del sistema de distribución procedural de objetos en superficie esférica con orientación curva, enraizamiento geométrico universal y descarte por distancia suave (`src/scene/surface.rs`).
-  - Batería de 48 pruebas deterministas modulares y documentación técnica.
+  - Batería de 66 pruebas deterministas modulares y documentación técnica.
 
 ---
 
@@ -255,7 +257,7 @@ El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularm
 | **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **5** | **Reclamado**: Modelo de Montaña (`Mountain_1_LOD_High.obj`) |
 | **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | **Reclamado**: Espiral de Fibonacci esférica determinista (`seed = 67`) |
 | **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica |
-| **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **18** | **Reclamado**: `ProceduralRockShader` + `ToonShader` + `ShipShader` (6 pts c/u) |
+| **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **24** | **Reclamado**: `ProceduralRockShader` + `ToonShader` + `ShipShader` + `AlienEnergyShader` (6 pts c/u) |
 | **Renderizado** | Shader animado cuyo efecto cambia con el tiempo | 8 | **8** | **Reclamado**: `PlasmaShader` solar con armónicos animados con tiempo ($dt$) |
 | **Renderizado** | Mapeo de normales en renderer por software | 8 | **0** | No iniciado |
 | **Renderizado** | Deformación de geometría mediante ruido u otra función | 10 | **0** | No iniciado |
@@ -268,4 +270,4 @@ El proyecto cuenta con 48 pruebas automatizadas deterministas divididas modularm
 | **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0** | Pendiente (descarte $O(1)$ listo; pendiente modelo simplificado) |
 | **Presentación** | Coherencia visual y composición de la escena | 5 | **0** | No iniciado |
 | **Presentación** | Claridad de la experiencia y controles | 5 | **0** | No iniciado |
-| **TOTAL** | | **200 (Máx. 100)** | **68** | **68 pts formalmente implementados y demostrables en vivo** |
+| **TOTAL** | | **200 (Máx. 100)** | **74** | **74 pts formalmente implementados y demostrables en vivo** |

@@ -4,8 +4,8 @@ use space_travel::material::Material;
 use space_travel::math::{Vec2, Vec3};
 use space_travel::mesh::{AABB, Mesh, Vertex};
 use space_travel::pipeline::{
-    EmissiveShader, FragmentInput, FragmentShader, PlasmaShader, ProceduralRockShader, ShipShader,
-    SkyShader, TexturedDiffuseShader, ToonShader,
+    AlienEnergyShader, EmissiveShader, FragmentInput, FragmentShader, PlasmaShader,
+    ProceduralRockShader, ShipShader, SkyShader, TexturedDiffuseShader, ToonShader,
 };
 use space_travel::texture::CpuTexture;
 use std::path::Path;
@@ -42,6 +42,66 @@ fn test_plasma_shader_animation_and_thermal_range() {
     // La tonalidad debe mantenerse en la paleta solar (rojo/naranja/amarillo, r >= g, g >= b)
     assert!(color_t0.r >= color_t0.b);
     assert!(color_t1.r >= color_t1.b);
+}
+
+#[test]
+fn test_alien_energy_shader_animation_is_deterministic() {
+    let mut shader = AlienEnergyShader::new(Vec3::new(0.0, 10.0, 10.0), Vec3::new(0.0, 0.0, 10.0));
+    let mat = Material::new("EnemyHull", Vec3::new(0.55, 0.72, 1.0), None);
+    let input = FragmentInput {
+        screen_x: 12,
+        screen_y: 20,
+        depth_ndc: 0.0,
+        world_pos: Vec3::new(0.7, 0.4, 0.0),
+        world_normal: Vec3::new(0.0, 0.0, 1.0),
+        uv: Vec2::zero(),
+        barycentric: Vec3::new(0.2, 0.3, 0.5),
+        material: &mat,
+    };
+
+    shader.set_time(0.35);
+    let color_a = shader.shade(&input);
+    let color_a_repeat = shader.shade(&input);
+    shader.set_time(1.10);
+    let color_b = shader.shade(&input);
+
+    assert_eq!(
+        color_a, color_a_repeat,
+        "El mismo tiempo y fragmento deben producir exactamente el mismo color"
+    );
+    assert_ne!(
+        color_a, color_b,
+        "Las bandas energéticas deben desplazarse con el tiempo de simulación"
+    );
+}
+
+#[test]
+fn test_alien_energy_shader_fresnel_rim() {
+    let shader = AlienEnergyShader::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, 10.0));
+    let mat = Material::new("EnemyHull", Vec3::new(0.45, 0.55, 0.70), None);
+    let front_input = FragmentInput {
+        screen_x: 0,
+        screen_y: 0,
+        depth_ndc: 0.0,
+        world_pos: Vec3::zero(),
+        world_normal: Vec3::new(0.0, 0.0, 1.0),
+        uv: Vec2::zero(),
+        barycentric: Vec3::new(1.0, 0.0, 0.0),
+        material: &mat,
+    };
+    let rim_input = FragmentInput {
+        world_normal: Vec3::new(1.0, 0.0, 0.0),
+        ..front_input.clone()
+    };
+
+    let front_color = shader.shade(&front_input);
+    let rim_color = shader.shade(&rim_input);
+
+    assert!(
+        rim_color.b > front_color.b,
+        "El borde de la silueta debe recibir una emisión azul más intensa"
+    );
+    assert_eq!(rim_color.a, 255);
 }
 
 #[test]
