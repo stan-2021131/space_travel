@@ -54,6 +54,8 @@ Para garantizar consistencia numérica sin parámetros sin uso:
 - **Multiplicación de matrices**: De derecha a izquierda: $v_{clip} = P \cdot V \cdot M \cdot v_{local}$.
 - **Rango de profundidad en NDC**: $z_{ndc} \in [-1.0, 1.0]$. Plano cercano en $-1.0$, plano lejano en $+1.0$.
 - **Devanado de caras frontales (*Winding*)**: Sentido antihorario (*Counter-Clockwise / CCW*).
+- **Rasterización Incremental de Pineda (1988)**: El rasterizador en CPU precalcula los gradientes analíticos constantes $\frac{\partial w_0}{\partial x}$, $\frac{\partial w_0}{\partial y}$, $\frac{\partial w_1}{\partial x}$, $\frac{\partial w_1}{\partial y}$ de las funciones baricéntricas. En lugar de evaluar 12 multiplicaciones y restas por píxel, avanza horizontalmente en $O(1)$ con una sola suma acumulativa (`w0 += dw0_dx`).
+- **Early-Z Estricto**: La prueba de profundidad se ejecuta inmediatamente al confirmar contención dentro del triángulo, descartando fragmentos ocluidos antes de calcular la costosa interpolación de perspectiva de normales, tangentes, posiciones de mundo y fragment shaders en CPU.
 
 ### Reglas de Muestreo de Texturas (`texture.rs`)
 - **Eje U (Horizontal)**: Muestreo con repetición / wrap ($u - \lfloor u \rfloor$) para resolver limpiamente la costura meridiana de la esfera.
@@ -153,7 +155,7 @@ cargo fmt --check
 # Análisis estático sin advertencias
 cargo clippy --all-targets
 
-# Suite completa de pruebas automatizadas (72 pruebas deterministas)
+# Suite completa de pruebas automatizadas (74 pruebas deterministas)
 cargo test
 ```
 
@@ -198,9 +200,9 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 13. Pruebas Automatizadas
 
-El proyecto cuenta con 72 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con 74 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
-- **Pipeline de Renderizado** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos de posición, normal, tangente y UV), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, proyección al viewport y descarte.
+- **Pipeline de Renderizado y Paralelización** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos de posición, normal, tangente y UV), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, partición horizontal de pantalla en franjas disjuntas (*Scanline Slicing*) y verificación de equivalencia determinista idéntica píxel por píxel entre renderizado monohilo y multihilo en CPU.
 - **Descarte de Visión / Frustum Culling** (`frustum_tests.rs`): Extracción analítica de los 6 planos del frustum desde la matriz de Vista-Proyección ($VP = P \cdot V$) mediante Gribb-Hartmann, normalización de planos, distancias signadas, intersección analítica con esferas envolventes, descarte estricto en los 6 ejes y acumulación de métricas diagnósticas.
 - **Generación Procedural de Geometría** (`icosphere_tests.rs`): Esfera geodésica analítica en `src/procedural/` a partir de un icosaedro regular de 12 vértices compartidos y 20 caras, progresión exponencial exacta ($V = 10 \cdot 4^N + 2$, $F = 20 \cdot 4^N$), característica de Euler invariante ($V - E + F = 2$), devanado CCW hacia el exterior y coordenadas UV esféricas.
 - **Subdivisión Procedural de Malla** (`subdivision_tests.rs`): Operador de subdivisión en malla (`mesh.subdivide()`), cuadruplicación analítica de triángulos ($1 \to 4$), deduplicación estricta de vértices en aristas compartidas mediante hash-cache, e interpolación baricéntrica de posiciones, normales, coordenadas UV y tangentes ortonormales.
@@ -230,7 +232,8 @@ El proyecto cuenta con 72 pruebas automatizadas deterministas divididas modularm
   - Implementación del sistema de Mapeo de Normales (Normal Mapping) con cálculo analítico de base $TBN$, interpolación afín/perspectiva en el rasterizador y `NormalMappedShader`.
   - Implementación del sistema de distribución procedural de objetos en superficie esférica con orientación curva, enraizamiento geométrico universal y descarte por distancia suave (`src/scene/surface.rs`).
   - Implementación del sistema de Frustum Culling analítico mediante extracción de planos Gribb-Hartmann y descarte esférico multinivel (`src/camera.rs`).
-  - Batería de 72 pruebas deterministas modulares y documentación técnica.
+  - Implementación del sistema de paralelización de renderizado en CPU sin dependencias externas mediante partición horizontal de pantalla en franjas contiguas disjuntas (*Scanline Slicing*) con `std::thread::scope` en rasterización y `SkyShader`.
+  - Batería de 74 pruebas deterministas modulares y documentación técnica.
 
 ---
 
