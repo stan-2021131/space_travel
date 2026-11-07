@@ -8,9 +8,43 @@ use std::path::Path;
 pub struct AppConfig {
     pub simulation: SimulationConfig,
     pub ship: ShipConfig,
+    pub enemies: EnemyConfig,
     pub camera: CameraConfig,
     pub sun: SunConfig,
     pub planets: Vec<PlanetConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnemyConfig {
+    pub model_path: String,
+    pub target_length_wu: f32,
+    pub model_yaw_offset_deg: f32,
+    pub initial_count: usize,
+    pub max_enemies: usize,
+    pub wave_increment: usize,
+    pub base_health: f32,
+    pub health_growth_per_wave: f32,
+    pub move_speed: f32,
+    pub steering_response: f32,
+    pub preferred_distance: f32,
+    pub fire_range: f32,
+    pub enemy_fire_interval: f32,
+    pub enemy_projectile_speed: f32,
+    pub enemy_projectile_damage: f32,
+    pub player_fire_interval: f32,
+    pub player_projectile_speed: f32,
+    pub player_projectile_damage: f32,
+    pub projectile_lifetime: f32,
+    pub projectile_radius: f32,
+    pub collision_radius: f32,
+    pub player_collision_radius: f32,
+    pub player_max_health: f32,
+    pub spawn_behind_sun_clearance: f32,
+    pub spawn_spread: f32,
+    pub reinforcement_distance: f32,
+    pub wave_delay: f32,
+    pub peace_after_no_fire_seconds: f32,
+    pub player_respawn_delay: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -160,6 +194,37 @@ impl AppConfig {
                 "[{}] Parámetros de nave (max_speed, acceleration) deben ser positivos",
                 p
             ));
+        }
+
+        let enemy = &self.enemies;
+        if enemy.initial_count == 0
+            || enemy.max_enemies < enemy.initial_count
+            || enemy.target_length_wu <= 0.0
+            || enemy.base_health <= 0.0
+            || enemy.move_speed <= 0.0
+            || enemy.steering_response <= 0.0
+            || enemy.preferred_distance <= 0.0
+            || enemy.fire_range <= 0.0
+            || enemy.enemy_fire_interval <= 0.0
+            || enemy.enemy_projectile_speed <= 0.0
+            || enemy.enemy_projectile_damage <= 0.0
+            || enemy.player_fire_interval <= 0.0
+            || enemy.player_projectile_speed <= 0.0
+            || enemy.player_projectile_damage <= 0.0
+            || enemy.projectile_lifetime <= 0.0
+            || enemy.projectile_radius <= 0.0
+            || enemy.collision_radius <= 0.0
+            || enemy.player_collision_radius <= 0.0
+            || enemy.player_max_health <= 0.0
+            || enemy.spawn_behind_sun_clearance <= 0.0
+            || enemy.spawn_spread <= 0.0
+            || enemy.reinforcement_distance <= 0.0
+            || enemy.wave_delay <= 0.0
+            || enemy.peace_after_no_fire_seconds <= 0.0
+            || enemy.player_respawn_delay <= 0.0
+            || !enemy.model_yaw_offset_deg.is_finite()
+        {
+            return Err(format!("[{}] Configuración de enemigos inválida", p));
         }
 
         if self.camera.position_smoothing <= 0.0 || self.camera.rotation_smoothing <= 0.0 {

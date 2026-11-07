@@ -1,14 +1,16 @@
 use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::camera::Camera;
+use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh};
 use crate::config::AppConfig;
+use crate::hud::{draw_health_bar, project_world_to_screen};
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
-use crate::physics::{ShipInput, ShipState};
+use crate::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
 use crate::pipeline::{
-    DepthDebugShader, FragmentShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
-    RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
-    TexturedDiffuseShader, ToonShader,
+    DepthDebugShader, EmissiveShader, FragmentShader, NormalsDebugShader, PlasmaShader,
+    ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader,
+    SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
     CelestialBody,
@@ -36,6 +38,10 @@ pub struct App {
     ship_mesh: Arc<Mesh>,
     ship_scale: f32,
     ship_state: ShipState,
+    enemy_mesh: Arc<Mesh>,
+    enemy_scale: f32,
+    projectile_mesh: Arc<Mesh>,
+    pub combat: CombatSystem,
 
     sun_body: CelestialBody,
     planets: Vec<CelestialBody>,
@@ -50,6 +56,11 @@ pub struct App {
     rock_shader: ProceduralRockShader,
     plasma_shader: PlasmaShader,
     ship_shader: ShipShader,
+    enemy_shader: ShipShader,
+    enemy_material: Material,
+    projectile_shader: EmissiveShader,
+    player_projectile_material: Material,
+    enemy_projectile_material: Material,
     toon_shader: ToonShader,
     sky_shader: SkyShader,
     depth_shader: DepthDebugShader,
@@ -78,6 +89,19 @@ impl App {
         } else {
             1.0
         };
+
+        println!(
+            "[RECURSOS] Cargando modelo de enemigos: {}",
+            config.enemies.model_path
+        );
+        let enemy_mesh = Arc::new(Mesh::load_from_obj(Path::new(&config.enemies.model_path))?);
+        let enemy_max_dim = enemy_mesh.aabb.max_extent();
+        let enemy_scale = if enemy_max_dim > 1e-6 {
+            config.enemies.target_length_wu / enemy_max_dim
+        } else {
+            1.0
+        };
+        let projectile_mesh = Arc::new(create_projectile_mesh());
 
         println!(
             "[RECURSOS] Cargando modelo del sol: {}",
@@ -159,6 +183,7 @@ impl App {
 
         // 2. Estado de la nave y cámara
         let ship_state = ShipState::new(&config.ship);
+        let combat = CombatSystem::new(&config.enemies);
         let aspect = Self::WINDOW_WIDTH as f32 / Self::WINDOW_HEIGHT as f32;
         let mut camera = Camera::new(
             ship_state.position - ship_state.forward() * config.camera.distance_behind
@@ -189,6 +214,9 @@ impl App {
         let plasma_shader = PlasmaShader::new();
         let toon_shader = ToonShader::new(sun_body.position, camera.eye);
         let ship_shader = ShipShader::new(sun_body.position, camera.eye);
+        let mut enemy_shader = ShipShader::new(sun_body.position, camera.eye);
+        enemy_shader.ambient_intensity = 0.38;
+        enemy_shader.specular_power = 18.0;
         let sky_shader = SkyShader::new(config.simulation.seed);
 
         Ok(Self {
@@ -200,6 +228,10 @@ impl App {
             ship_mesh,
             ship_scale,
             ship_state,
+            enemy_mesh,
+            enemy_scale,
+            projectile_mesh,
+            combat,
             sun_body,
             planets,
             sim_time: 0.0,
@@ -209,6 +241,19 @@ impl App {
             rock_shader,
             plasma_shader,
             ship_shader,
+            enemy_shader,
+            enemy_material: Material::new("EnemyHull", Vec3::new(0.55, 0.72, 1.0), None),
+            projectile_shader: EmissiveShader::new(1.0),
+            player_projectile_material: Material::new(
+                "PlayerProjectile",
+                Vec3::new(0.15, 0.9, 1.0),
+                None,
+            ),
+            enemy_projectile_material: Material::new(
+                "EnemyProjectile",
+                Vec3::new(1.0, 0.15, 0.05),
+                None,
+            ),
             toon_shader,
             sky_shader,
             depth_shader,
@@ -251,6 +296,8 @@ impl App {
         println!("  [Flecha Abajo]   : Pitch abajo");
         println!("  [Q] / [E]        : Roll (Alabeo)");
         println!("  [R]              : Reiniciar posición y orientación de la nave");
+        println!("  [Espacio]        : Disparar");
+        println!("  [F4]             : Activar/desactivar encuentro con enemigos");
         println!(
             "  [F2]             : Alternar modo de shader (Normal -> Toon -> Depth -> Normals)"
         );
@@ -341,7 +388,26 @@ impl App {
     fn read_input(&mut self, rl: &RaylibHandle) -> ShipInput {
         if rl.is_key_pressed(KeyboardKey::KEY_R) {
             self.ship_state.reset(&self.config.ship);
+            self.combat.restore_player_health(&self.config.enemies);
             println!("[SIMULACIÓN] Nave reiniciada a posición inicial.");
+        }
+
+        if rl.is_key_pressed(KeyboardKey::KEY_F4) {
+            if self.combat.encounter_active() {
+                self.combat.deactivate();
+                println!("[ENCUENTRO] Desactivado. El sistema vuelve a modo pacífico.");
+            } else {
+                self.combat.activate(
+                    self.ship_state.position,
+                    self.sun_body.position,
+                    self.sun_body.radius,
+                    &self.config.enemies,
+                );
+                println!(
+                    "[ENCUENTRO] Activado: {} visitantes aparecieron detrás del Sol en modo supervisión.",
+                    self.combat.enemies.len()
+                );
+            }
         }
 
         if rl.is_key_pressed(KeyboardKey::KEY_F2) {
@@ -361,6 +427,7 @@ impl App {
             pitch_down: rl.is_key_down(KeyboardKey::KEY_DOWN),
             roll_left: rl.is_key_down(KeyboardKey::KEY_Q),
             roll_right: rl.is_key_down(KeyboardKey::KEY_E),
+            fire: rl.is_key_down(KeyboardKey::KEY_SPACE),
         }
     }
 
@@ -380,22 +447,111 @@ impl App {
             planet.update(self.sim_time);
         }
 
-        // Colisiones inelásticas con deslizamiento
-        // 1. Sol
-        self.ship_state.resolve_collision(
-            self.sun_body.position,
-            self.sun_body.radius,
-            self.sun_body.collision_margin,
-        );
-
-        // 2. Planetas
-        for planet in &self.planets {
-            self.ship_state.resolve_collision(
-                planet.position,
-                planet.radius,
-                planet.collision_margin,
+        // Envolventes compartidas: Sol, planetas y objetos de superficie.
+        let obstacles = self.collect_collision_obstacles();
+        for &obstacle in &obstacles {
+            resolve_sphere_collision(
+                &mut self.ship_state.position,
+                &mut self.ship_state.velocity,
+                self.ship_state.collision_radius,
+                obstacle,
             );
         }
+
+        if input.fire {
+            self.combat.try_player_fire(
+                self.sim_time,
+                self.ship_state.position,
+                self.ship_state.forward(),
+                self.ship_state.velocity,
+                &self.config.enemies,
+            );
+        }
+
+        let combat_update = self.combat.update(
+            self.sim_time,
+            dt,
+            self.ship_state.position,
+            &self.config.enemies,
+        );
+        self.combat
+            .resolve_obstacle_collisions(&obstacles, &self.config.enemies);
+        if combat_update.attack_started {
+            println!(
+                "[ENCUENTRO] Un visitante fue destruido. Todos los enemigos entran en modo ATAQUE."
+            );
+        }
+        if combat_update.peace_started {
+            println!(
+                "[ENCUENTRO] 20 segundos sin disparos: los enemigos detienen su movimiento y vuelven a observación pacífica."
+            );
+        }
+        if let Some(wave) = combat_update.wave_spawned {
+            println!(
+                "[ENCUENTRO] Oleada {} desplegada con {} enemigos.",
+                wave,
+                self.combat.enemies.len()
+            );
+        }
+        if combat_update.player_damage > 0.0 {
+            println!(
+                "[NAVE] Daño recibido: {:.0}. Vida: {:.0}/{:.0}",
+                combat_update.player_damage,
+                self.combat.player_health,
+                self.config.enemies.player_max_health
+            );
+        }
+        if combat_update.player_destroyed {
+            println!(
+                "[NAVE] Nave destruida. Reaparición automática en {:.0} segundos.",
+                self.config.enemies.player_respawn_delay
+            );
+        }
+        if combat_update.player_respawned {
+            self.ship_state.reset(&self.config.ship);
+            println!("[NAVE] Nave restaurada con vida completa.");
+        }
+    }
+
+    fn collect_collision_obstacles(&self) -> Vec<CollisionSphere> {
+        let surface_count = self
+            .planets
+            .iter()
+            .flat_map(|planet| &planet.surface_groups)
+            .map(|group| group.instances.len())
+            .sum::<usize>();
+        let mut obstacles = Vec::with_capacity(1 + self.planets.len() + surface_count);
+
+        obstacles.push(CollisionSphere::new(
+            self.sun_body.position,
+            self.sun_body.radius + self.sun_body.collision_margin,
+        ));
+
+        for planet in &self.planets {
+            obstacles.push(CollisionSphere::new(
+                planet.position,
+                planet.radius + planet.collision_margin,
+            ));
+
+            let planet_rotation = planet.rotation_matrix();
+            let planet_translation = Mat4::from_translation(planet.position);
+            for group in &planet.surface_groups {
+                let local_mesh_center = group.mesh.aabb.center();
+                let mesh_radius = group.mesh.geometric_radius();
+                for instance in &group.instances {
+                    let object_transform = planet_translation
+                        * planet_rotation
+                        * Mat4::from_translation(instance.local_pos)
+                        * instance.local_basis
+                        * Mat4::uniform_scaling(instance.base_scale);
+                    let center = object_transform.transform_point(local_mesh_center);
+                    let radius = (mesh_radius * instance.base_scale).max(0.15);
+                    obstacles.push(CollisionSphere::new(center, radius));
+                }
+            }
+        }
+
+        obstacles
     }
 
     /// Renderiza todos los cuerpos de la escena continua en el framebuffer propio en CPU.
@@ -414,6 +570,8 @@ impl App {
         self.toon_shader.light_pos = self.sun_body.position;
         self.ship_shader.camera_pos = self.camera.eye;
         self.ship_shader.light_pos = self.sun_body.position;
+        self.enemy_shader.camera_pos = self.camera.eye;
+        self.enemy_shader.light_pos = self.sun_body.position;
         self.plasma_shader.sun_center = self.sun_body.position;
         self.rock_shader.light_pos = self.sun_body.position;
         self.planet_shader.light_pos = self.sun_body.position;
@@ -542,7 +700,59 @@ impl App {
             }
         }
 
-        // 3. Nave
+        // 3. Enemigos y proyectiles. En modo pacífico ambas colecciones están vacías.
+        let enemy_center = self.enemy_mesh.aabb.center();
+        for enemy in &self.combat.enemies {
+            // El OBJ enemigo fue exportado con la punta hacia +X. La corrección
+            // configurable alinea esa punta con la dirección exacta a la nave.
+            let enemy_rotation = enemy.rotation_matrix()
+                * Mat4::rotation_y(deg_to_rad(self.config.enemies.model_yaw_offset_deg));
+            let enemy_model = Mat4::from_translation(enemy.position)
+                * enemy_rotation
+                * Mat4::uniform_scaling(self.enemy_scale)
+                * Mat4::from_translation(-enemy_center);
+            Self::draw_mesh(
+                &mut self.renderer,
+                self.shader_mode,
+                &self.depth_shader,
+                &self.normals_shader,
+                &self.toon_shader,
+                &self.enemy_shader,
+                &self.enemy_mesh,
+                &enemy_model,
+                &enemy_rotation,
+                &vp_matrix,
+                &self.enemy_material,
+                &mut target,
+                stats,
+            );
+        }
+
+        for projectile in &self.combat.projectiles {
+            let projectile_model = Mat4::from_translation(projectile.position)
+                * Mat4::uniform_scaling(projectile.radius);
+            let material = match projectile.owner {
+                ProjectileOwner::Player => &self.player_projectile_material,
+                ProjectileOwner::Enemy => &self.enemy_projectile_material,
+            };
+            Self::draw_mesh(
+                &mut self.renderer,
+                self.shader_mode,
+                &self.depth_shader,
+                &self.normals_shader,
+                &self.toon_shader,
+                &self.projectile_shader,
+                &self.projectile_mesh,
+                &projectile_model,
+                &Mat4::IDENTITY,
+                &vp_matrix,
+                material,
+                &mut target,
+                stats,
+            );
+        }
+
+        // 4. Nave
         let ship_center = self.ship_mesh.aabb.center();
         let ship_model = Mat4::from_translation(self.ship_state.position)
             * self.ship_state.rotation_matrix()
@@ -565,6 +775,61 @@ impl App {
             &mut target,
             stats,
         );
+
+        // Las barras se dibujan al final como overlay del framebuffer CPU.
+        Self::draw_entity_health_bars(
+            &mut self.framebuffer,
+            &vp_matrix,
+            self.ship_state.position,
+            self.combat.player_health,
+            self.config.enemies.player_max_health,
+            &self.combat.enemies,
+            self.config.enemies.target_length_wu,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_entity_health_bars(
+        framebuffer: &mut Framebuffer,
+        view_projection: &Mat4,
+        ship_position: Vec3,
+        ship_health: f32,
+        ship_max_health: f32,
+        enemies: &[Enemy],
+        enemy_height: f32,
+    ) {
+        let width = framebuffer.width;
+        let height = framebuffer.height;
+
+        if let Some((x, y)) = project_world_to_screen(
+            view_projection,
+            ship_position + Vec3::up() * 1.0,
+            width,
+            height,
+        ) {
+            draw_health_bar(
+                framebuffer,
+                x,
+                y - 8,
+                54,
+                7,
+                ship_health / ship_max_health.max(1e-6),
+            );
+        }
+
+        for enemy in enemies {
+            let anchor = enemy.position + Vec3::up() * (enemy_height * 0.65);
+            if let Some((x, y)) = project_world_to_screen(view_projection, anchor, width, height) {
+                draw_health_bar(
+                    framebuffer,
+                    x,
+                    y - 6,
+                    40,
+                    6,
+                    enemy.health / enemy.max_health.max(1e-6),
+                );
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
