@@ -1,6 +1,7 @@
 use crate::material::Material;
 use crate::math::{Transform, Vec2, Vec3};
 use crate::texture::CpuTexture;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ pub struct Vertex {
     pub position: Vec3,
     pub normal: Vec3,
     pub uv: Vec2,
+    pub tangent: Vec3,
 }
 
 impl Vertex {
@@ -18,6 +20,16 @@ impl Vertex {
             position,
             normal,
             uv,
+            tangent: Vec3::new(1.0, 0.0, 0.0),
+        }
+    }
+
+    pub const fn with_tangent(position: Vec3, normal: Vec3, uv: Vec2, tangent: Vec3) -> Self {
+        Self {
+            position,
+            normal,
+            uv,
+            tangent,
         }
     }
 }
@@ -231,8 +243,8 @@ impl Mesh {
         // Carga y resolución del material asociado
         let material = if let (Ok(materials), Some(mat_id)) = (materials_res, primary_mat_id) {
             if let Some(tmat) = materials.get(mat_id) {
+                let parent_dir = path.parent().unwrap_or(Path::new(""));
                 let texture = if let Some(ref tex_file) = tmat.diffuse_texture {
-                    let parent_dir = path.parent().unwrap_or(Path::new(""));
                     let tex_path = parent_dir.join(tex_file);
                     match CpuTexture::load_from_file(&tex_path) {
                         Ok(tex) => Some(Arc::new(tex)),
@@ -249,6 +261,28 @@ impl Mesh {
                     None
                 };
 
+                // Detección y carga de textura de normales (Normal Map)
+                let normal_texture = if let Some(ref norm_file) = tmat.normal_texture {
+                    let norm_path = parent_dir.join(norm_file);
+                    match CpuTexture::load_from_file(&norm_path) {
+                        Ok(tex) => Some(Arc::new(tex)),
+                        Err(_) => None,
+                    }
+                } else if let Some(ref tex_file) = tmat.diffuse_texture {
+                    let stem = Path::new(tex_file)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
+                    let candidate = parent_dir.join(format!("{}_norm.png", stem));
+                    if candidate.exists() {
+                        CpuTexture::load_from_file(&candidate).ok().map(Arc::new)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
                 // Si la malla cuenta con mapa de textura difuso, se utiliza Kd unitario para
                 // no atenuar ni distorsionar los colores de la textura con valores de interfaz residuales.
                 let kd = if texture.is_some() {
@@ -260,7 +294,7 @@ impl Mesh {
                     }
                 };
 
-                Material::new(&tmat.name, kd, texture)
+                Material::with_normal_map(&tmat.name, kd, texture, normal_texture)
             } else {
                 Material::default_diffuse()
             }
@@ -268,6 +302,237 @@ impl Mesh {
             Material::default_diffuse()
         };
 
-        Ok(Self::with_material(all_vertices, all_indices, material))
+        let mut mesh = Self::with_material(all_vertices, all_indices, material);
+        mesh.calculate_tangents();
+        Ok(mesh)
+    }
+
+    /// Subdivide proceduralmente cada triángulo de la malla en 4 subtriángulos ($1 \to 4$),
+    /// calculando nuevos vértices en el punto medio de cada arista con interpolación de
+    /// atributos geométricos (posición, normal, UV y tangente), y deduplicando aristas compartidas.
+    pub fn subdivide(&mut self) {
+        let mut edge_cache: HashMap<(u32, u32), u32> = HashMap::new();
+        let mut next_indices = Vec::with_capacity(self.indices.len() * 4);
+
+        for tri in self.indices.chunks_exact(3) {
+            let i0 = tri[0];
+            let i1 = tri[1];
+            let i2 = tri[2];
+
+            let mut get_midpoint = |a: u32, b: u32, vertices: &mut Vec<Vertex>| -> u32 {
+                let key = (a.min(b), a.max(b));
+                if let Some(&idx) = edge_cache.get(&key) {
+                    idx
+                } else {
+                    let va = vertices[a as usize];
+                    let vb = vertices[b as usize];
+                    let mid_pos = (va.position + vb.position) * 0.5;
+                    let mid_norm = if (va.normal + vb.normal).length_squared() > 1e-8 {
+                        (va.normal + vb.normal).normalize()
+                    } else {
+                        va.normal
+                    };
+                    let mid_uv = (va.uv + vb.uv) * 0.5;
+                    let mid_tangent = if (va.tangent + vb.tangent).length_squared() > 1e-8 {
+                        (va.tangent + vb.tangent).normalize()
+                    } else {
+                        va.tangent
+                    };
+                    let new_v = Vertex::with_tangent(mid_pos, mid_norm, mid_uv, mid_tangent);
+                    vertices.push(new_v);
+                    let idx = (vertices.len() - 1) as u32;
+                    edge_cache.insert(key, idx);
+                    idx
+                }
+            };
+
+            let m01 = get_midpoint(i0, i1, &mut self.vertices);
+            let m12 = get_midpoint(i1, i2, &mut self.vertices);
+            let m20 = get_midpoint(i2, i0, &mut self.vertices);
+
+            next_indices.extend_from_slice(&[i0, m01, m20]);
+            next_indices.extend_from_slice(&[i1, m12, m01]);
+            next_indices.extend_from_slice(&[i2, m20, m12]);
+            next_indices.extend_from_slice(&[m01, m12, m20]);
+        }
+
+        self.indices = next_indices;
+        self.update_aabb();
+    }
+
+    /// Deforma la geometría de la malla desplazando cada vértice a lo largo de su vector normal
+    /// según una función de ruido continuo tridimensional determinista, y recalcula analíticamente
+    /// las normales de las caras para garantizar iluminación suave y precisa.
+    pub fn deform(&mut self, amplitude: f32, frequency: f32, seed: u32) {
+        if amplitude.abs() < 1e-6 {
+            return;
+        }
+
+        const INV_U32_MAX: f32 = 1.0 / 4294967295.0;
+
+        fn value_noise(p: Vec3, seed: u32) -> f32 {
+            let ix = p.x.floor() as i32;
+            let iy = p.y.floor() as i32;
+            let iz = p.z.floor() as i32;
+
+            let fx = p.x - ix as f32;
+            let fy = p.y - iy as f32;
+            let fz = p.z - iz as f32;
+
+            let ux = fx * fx * (3.0 - 2.0 * fx);
+            let uy = fy * fy * (3.0 - 2.0 * fy);
+            let uz = fz * fz * (3.0 - 2.0 * fz);
+
+            let hx0 = (ix as u32).wrapping_mul(374761393);
+            let hx1 = ((ix + 1) as u32).wrapping_mul(374761393);
+            let hy0 = (iy as u32).wrapping_mul(668265263);
+            let hy1 = ((iy + 1) as u32).wrapping_mul(668265263);
+            let hz0 = (iz as u32).wrapping_mul(951214213);
+            let hz1 = ((iz + 1) as u32).wrapping_mul(951214213);
+            let hs = seed.wrapping_mul(1103515245);
+
+            #[inline(always)]
+            fn mix_h(h_in: u32) -> f32 {
+                let h = (h_in ^ (h_in >> 13)).wrapping_mul(1274126177);
+                (h as f32) * INV_U32_MAX
+            }
+
+            let c000 = mix_h(hx0 ^ hy0 ^ hz0 ^ hs);
+            let c100 = mix_h(hx1 ^ hy0 ^ hz0 ^ hs);
+            let c010 = mix_h(hx0 ^ hy1 ^ hz0 ^ hs);
+            let c110 = mix_h(hx1 ^ hy1 ^ hz0 ^ hs);
+            let c001 = mix_h(hx0 ^ hy0 ^ hz1 ^ hs);
+            let c101 = mix_h(hx1 ^ hy0 ^ hz1 ^ hs);
+            let c011 = mix_h(hx0 ^ hy1 ^ hz1 ^ hs);
+            let c111 = mix_h(hx1 ^ hy1 ^ hz1 ^ hs);
+
+            let x00 = c000 + ux * (c100 - c000);
+            let x10 = c010 + ux * (c110 - c010);
+            let x01 = c001 + ux * (c101 - c001);
+            let x11 = c011 + ux * (c111 - c011);
+
+            let y0 = x00 + uy * (x10 - x00);
+            let y1 = x01 + uy * (x11 - x01);
+
+            y0 + uz * (y1 - y0)
+        }
+
+        // Aplicamos deformación multi-octava a cada vértice
+        for v in &mut self.vertices {
+            let sample_p = v.position * frequency;
+            let n1 = value_noise(sample_p, seed);
+            let n2 = value_noise(sample_p * 2.1, seed.wrapping_add(101));
+            // Desplazamiento centrado con dos octavas (macro y relieve)
+            let displacement = ((n1 * 0.7 + n2 * 0.3) - 0.5) * 2.0 * amplitude;
+            v.position += v.normal * displacement;
+        }
+
+        self.recalculate_normals();
+        self.update_aabb();
+        self.calculate_tangents();
+    }
+
+    /// Recalcula analíticamente los vectores normales de todos los vértices promediando
+    /// las normales de las caras triangulares adyacentes (Smooth Shading).
+    pub fn recalculate_normals(&mut self) {
+        for v in &mut self.vertices {
+            v.normal = Vec3::zero();
+        }
+
+        for chunk in self.indices.chunks_exact(3) {
+            let i0 = chunk[0] as usize;
+            let i1 = chunk[1] as usize;
+            let i2 = chunk[2] as usize;
+
+            let p0 = self.vertices[i0].position;
+            let p1 = self.vertices[i1].position;
+            let p2 = self.vertices[i2].position;
+
+            let face_normal = (p1 - p0).cross(p2 - p0);
+            self.vertices[i0].normal += face_normal;
+            self.vertices[i1].normal += face_normal;
+            self.vertices[i2].normal += face_normal;
+        }
+
+        for v in &mut self.vertices {
+            if v.normal.length_squared() > 1e-8 {
+                v.normal = v.normal.normalize();
+            } else {
+                v.normal = v.position.normalize();
+            }
+        }
+    }
+
+    /// Actualiza el Axis-Aligned Bounding Box (AABB) de la malla a partir de las posiciones actuales de sus vértices.
+    pub fn update_aabb(&mut self) {
+        let positions: Vec<Vec3> = self.vertices.iter().map(|v| v.position).collect();
+        self.aabb = AABB::from_points(&positions);
+    }
+
+    /// Calcula analíticamente los vectores tangentes ortonormales en espacio de vértice
+    /// a partir de las coordenadas UV y posiciones de los triángulos, aplicando el proceso de Gram-Schmidt.
+    pub fn calculate_tangents(&mut self) {
+        for v in &mut self.vertices {
+            v.tangent = Vec3::zero();
+        }
+
+        for chunk in self.indices.chunks_exact(3) {
+            let i0 = chunk[0] as usize;
+            let i1 = chunk[1] as usize;
+            let i2 = chunk[2] as usize;
+
+            let p0 = self.vertices[i0].position;
+            let p1 = self.vertices[i1].position;
+            let p2 = self.vertices[i2].position;
+
+            let uv0 = self.vertices[i0].uv;
+            let uv1 = self.vertices[i1].uv;
+            let uv2 = self.vertices[i2].uv;
+
+            let edge1 = p1 - p0;
+            let edge2 = p2 - p0;
+
+            let delta_uv1 = uv1 - uv0;
+            let delta_uv2 = uv2 - uv0;
+
+            let det = delta_uv1.x * delta_uv2.y - delta_uv2.x * delta_uv1.y;
+            let tangent = if det.abs() > 1e-7 {
+                let inv_det = 1.0 / det;
+                Vec3::new(
+                    inv_det * (delta_uv2.y * edge1.x - delta_uv1.y * edge2.x),
+                    inv_det * (delta_uv2.y * edge1.y - delta_uv1.y * edge2.y),
+                    inv_det * (delta_uv2.y * edge1.z - delta_uv1.y * edge2.z),
+                )
+            } else {
+                let n = self.vertices[i0].normal;
+                let arbitrary = if n.y.abs() < 0.9 {
+                    Vec3::up()
+                } else {
+                    Vec3::new(1.0, 0.0, 0.0)
+                };
+                n.cross(arbitrary).normalize()
+            };
+
+            self.vertices[i0].tangent += tangent;
+            self.vertices[i1].tangent += tangent;
+            self.vertices[i2].tangent += tangent;
+        }
+
+        // Ortonormalización de Gram-Schmidt: T' = normalize(T - (T · N) * N)
+        for v in &mut self.vertices {
+            let t = v.tangent;
+            let n = v.normal;
+            let t_ortho = t - n * t.dot(n);
+            if t_ortho.length_squared() > 1e-8 {
+                v.tangent = t_ortho.normalize();
+            } else {
+                let arbitrary = if n.y.abs() < 0.9 {
+                    Vec3::up()
+                } else {
+                    Vec3::new(1.0, 0.0, 0.0)
+                };
+                v.tangent = n.cross(arbitrary).normalize();
+            }
+        }
     }
 }

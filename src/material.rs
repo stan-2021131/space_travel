@@ -10,6 +10,8 @@ pub struct Material {
     pub kd: Vec3,
     /// Textura difusa opcional cargada en RAM.
     pub texture: Option<Arc<CpuTexture>>,
+    /// Textura de normales opcional (Normal Map) en espacio tangente.
+    pub normal_texture: Option<Arc<CpuTexture>>,
 }
 
 impl Material {
@@ -18,6 +20,21 @@ impl Material {
             name: name.into(),
             kd,
             texture,
+            normal_texture: None,
+        }
+    }
+
+    pub fn with_normal_map(
+        name: impl Into<String>,
+        kd: Vec3,
+        texture: Option<Arc<CpuTexture>>,
+        normal_texture: Option<Arc<CpuTexture>>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            kd,
+            texture,
+            normal_texture,
         }
     }
 
@@ -27,6 +44,7 @@ impl Material {
             name: "DefaultMaterial".to_string(),
             kd: Vec3::new(0.85, 0.85, 0.90),
             texture: None,
+            normal_texture: None,
         }
     }
 
@@ -35,6 +53,7 @@ impl Material {
             name: name.into(),
             kd,
             texture: Some(texture),
+            normal_texture: None,
         }
     }
 }

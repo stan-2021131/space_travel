@@ -132,7 +132,15 @@ fn default_surface_fade_range() -> f32 {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PlanetConfig {
     pub id: String,
+    #[serde(default = "default_mesh_type")]
+    pub mesh_type: String,
     pub model_path: String,
+    #[serde(default)]
+    pub subdivisions: u32,
+    #[serde(default)]
+    pub deformation_amplitude: f32,
+    #[serde(default = "default_deformation_frequency")]
+    pub deformation_frequency: f32,
     pub radius: f32,
     pub orbital_radius: f32,
     pub orbital_period: f32,
@@ -142,6 +150,14 @@ pub struct PlanetConfig {
     pub shader: String,
     #[serde(default)]
     pub surface_objects: Vec<SurfaceObjectConfig>,
+}
+
+fn default_mesh_type() -> String {
+    "model".to_string()
+}
+
+fn default_deformation_frequency() -> f32 {
+    0.5
 }
 
 impl AppConfig {
@@ -251,6 +267,18 @@ impl AppConfig {
                 return Err(format!(
                     "[{}] ID duplicado en configuración: '{}'",
                     p, planet.id
+                ));
+            }
+            if planet.mesh_type != "icosphere" && planet.model_path.trim().is_empty() {
+                return Err(format!(
+                    "[{}] Planeta '{}' con mesh_type '{}' requiere model_path no vacío",
+                    p, planet.id, planet.mesh_type
+                ));
+            }
+            if planet.subdivisions > 5 {
+                return Err(format!(
+                    "[{}] Subdivisions en '{}' ({}) excede el límite máximo seguro (5)",
+                    p, planet.id, planet.subdivisions
                 ));
             }
             for obj in &planet.surface_objects {

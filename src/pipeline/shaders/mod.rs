@@ -1,6 +1,7 @@
 pub mod alien_energy;
 pub mod debug;
 pub mod diffuse;
+pub mod normal_mapped;
 pub mod plasma;
 pub mod procedural_rock;
 pub mod ship;
@@ -14,6 +15,7 @@ use crate::math::{Vec2, Vec3};
 pub use alien_energy::AlienEnergyShader;
 pub use debug::{DepthDebugShader, NormalsDebugShader};
 pub use diffuse::{DiffuseShader, EmissiveShader, TexturedDiffuseShader};
+pub use normal_mapped::NormalMappedShader;
 pub use plasma::PlasmaShader;
 pub use procedural_rock::ProceduralRockShader;
 pub use ship::ShipShader;
@@ -28,6 +30,7 @@ pub struct FragmentInput<'a> {
     pub depth_ndc: f32,
     pub world_pos: Vec3,
     pub world_normal: Vec3,
+    pub world_tangent: Vec3,
     pub uv: Vec2,
     pub barycentric: Vec3,
     pub material: &'a Material,
@@ -59,6 +62,6 @@ impl ShaderMode {
 }
 
 /// Trait para shaders de fragmentos ejecutados íntegramente en CPU.
-pub trait FragmentShader {
+pub trait FragmentShader: Sync {
     fn shade(&self, input: &FragmentInput<'_>) -> Color;
 }
