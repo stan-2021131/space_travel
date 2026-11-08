@@ -436,7 +436,7 @@ impl App {
                     &self.config.enemies,
                 );
                 println!(
-                    "[ENCUENTRO] Activado: {} visitantes aparecieron detrás del Sol en modo supervisión.",
+                    "[ENCUENTRO] Activado: {} visitantes aparecieron detrás del Sol en aproximación inicial.",
                     self.combat.enemies.len()
                 );
             }

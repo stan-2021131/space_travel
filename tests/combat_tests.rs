@@ -21,7 +21,7 @@ fn peaceful_mode_starts_without_enemies_and_with_full_health() {
 }
 
 #[test]
-fn activation_spawns_supervisors_behind_the_sun() {
+fn activation_spawns_approachers_behind_the_sun() {
     let cfg = config();
     let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     let ship = Vec3::new(0.0, 0.0, 200.0);
@@ -29,7 +29,7 @@ fn activation_spawns_supervisors_behind_the_sun() {
 
     combat.activate(ship, sun, cfg.sun.radius, &cfg.enemies);
 
-    assert_eq!(combat.state, EncounterState::Supervising);
+    assert_eq!(combat.state, EncounterState::Approaching);
     assert_eq!(combat.enemies.len(), cfg.enemies.initial_count);
     assert!(
         combat
@@ -261,6 +261,7 @@ fn supervising_enemies_are_slow_enough_for_the_player_to_escape() {
     let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     let ship = Vec3::new(0.0, 0.0, 1_000.0);
     combat.activate(ship, Vec3::new(0.0, 0.0, -100.0), 10.0, &cfg.enemies);
+    combat.state = EncounterState::Supervising;
     combat.enemies.truncate(1);
     combat.enemies[0].position = Vec3::zero();
 
@@ -272,6 +273,40 @@ fn supervising_enemies_are_slow_enough_for_the_player_to_escape() {
     let actual_speed = combat.enemies[0].velocity.length();
     assert!((actual_speed - expected_speed).abs() < 0.01);
     assert!(actual_speed < cfg.ship.max_speed);
+}
+
+#[test]
+fn approaching_enemies_use_full_player_max_speed() {
+    let cfg = config();
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
+    let ship = Vec3::new(0.0, 0.0, 1_000.0);
+    combat.activate(ship, Vec3::new(0.0, 0.0, -100.0), 10.0, &cfg.enemies);
+    combat.enemies.truncate(1);
+    combat.enemies[0].position = Vec3::zero();
+
+    for step in 0..200 {
+        combat.update(step as f32 * 0.05, 0.05, ship, &cfg.enemies);
+    }
+
+    assert_eq!(combat.state, EncounterState::Approaching);
+    let actual_speed = combat.enemies[0].velocity.length();
+    assert!((actual_speed - cfg.ship.max_speed).abs() < 0.01);
+}
+
+#[test]
+fn reaching_player_changes_to_supervising_without_reapproaching() {
+    let cfg = config();
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
+    let ship = Vec3::new(0.0, 0.0, 100.0);
+    combat.activate(ship, Vec3::zero(), cfg.sun.radius, &cfg.enemies);
+    combat.enemies.truncate(1);
+    combat.enemies[0].position = ship - Vec3::new(0.0, 0.0, cfg.enemies.supervising_distance);
+
+    combat.update(0.0, 0.0, ship, &cfg.enemies);
+    assert_eq!(combat.state, EncounterState::Supervising);
+
+    combat.update(1.0, 0.1, ship + Vec3::new(0.0, 0.0, 500.0), &cfg.enemies);
+    assert_eq!(combat.state, EncounterState::Supervising);
 }
 
 #[test]

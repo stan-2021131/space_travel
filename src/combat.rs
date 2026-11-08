@@ -7,6 +7,7 @@ use crate::physics::{CollisionSphere, resolve_sphere_collision};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncounterState {
     Dormant,
+    Approaching,
     Supervising,
     Attacking,
     Observing,
@@ -125,7 +126,7 @@ impl CombatSystem {
         config: &EnemyConfig,
     ) {
         self.deactivate();
-        self.state = EncounterState::Supervising;
+        self.state = EncounterState::Approaching;
         self.wave = 1;
         self.last_player_shot_time = None;
 
@@ -216,7 +217,12 @@ impl CombatSystem {
             result.player_destroyed = true;
         }
 
-        if result.enemies_destroyed > 0 && self.state == EncounterState::Supervising {
+        if result.enemies_destroyed > 0
+            && matches!(
+                self.state,
+                EncounterState::Approaching | EncounterState::Supervising
+            )
+        {
             self.state = EncounterState::Attacking;
             result.attack_started = true;
         }
@@ -291,6 +297,14 @@ impl CombatSystem {
             return;
         }
 
+        if self.state == EncounterState::Approaching
+            && self.enemies.iter().any(|enemy| {
+                (ship_position - enemy.position).length() <= config.supervising_distance
+            })
+        {
+            self.state = EncounterState::Supervising;
+        }
+
         let may_fire = self.state == EncounterState::Attacking;
         let movement_speed = self.enemy_speed(config);
         let preferred_distance = if self.state == EncounterState::Supervising {
@@ -351,6 +365,7 @@ impl CombatSystem {
 
     fn enemy_speed(&self, config: &EnemyConfig) -> f32 {
         let ratio = match self.state {
+            EncounterState::Approaching => config.approaching_speed_ratio,
             EncounterState::Supervising => config.supervising_speed_ratio,
             EncounterState::Attacking => config.attacking_speed_ratio,
             EncounterState::Dormant | EncounterState::Observing => 0.0,

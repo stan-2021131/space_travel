@@ -22,7 +22,8 @@ fn test_valid_configuration_loading() {
     assert!(config.enemies.player_max_health > 0.0);
     assert_eq!(config.enemies.peace_after_no_fire_seconds, 20.0);
     assert!(config.enemies.player_respawn_delay > 0.0);
-    assert_eq!(config.enemies.supervising_speed_ratio, 0.35);
+    assert_eq!(config.enemies.approaching_speed_ratio, 1.00);
+    assert_eq!(config.enemies.supervising_speed_ratio, 0.30);
     assert_eq!(config.enemies.attacking_speed_ratio, 0.80);
     assert!(config.enemies.supervising_distance > config.enemies.preferred_distance);
     assert!(config.sun.radius > 0.0);
@@ -67,6 +68,11 @@ fn test_invalid_configuration_rejections() {
     let mut bad_attack_speed = valid.clone();
     bad_attack_speed.enemies.attacking_speed_ratio = 1.1;
     assert!(bad_attack_speed.validate(Path::new("test.toml")).is_err());
+
+    let mut bad_approach_speed = valid.clone();
+    bad_approach_speed.enemies.approaching_speed_ratio =
+        bad_approach_speed.enemies.attacking_speed_ratio;
+    assert!(bad_approach_speed.validate(Path::new("test.toml")).is_err());
 
     let mut bad_supervision_speed = valid.clone();
     bad_supervision_speed.enemies.supervising_speed_ratio =
