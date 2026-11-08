@@ -156,7 +156,7 @@ cargo fmt --check
 # Análisis estático sin advertencias
 cargo clippy --all-targets
 
-# Suite completa de pruebas automatizadas (78 pruebas deterministas)
+# Suite completa de pruebas automatizadas (80 pruebas deterministas)
 cargo test
 ```
 
@@ -182,6 +182,12 @@ cargo run --release
 | `F2` | Alternar modo de shader CPU: **Normal** $\to$ **Toon (Anime Cel-Shading)** $\to$ **Depuración de Profundidad (Depth Debug)** $\to$ **Depuración de Normales (Normals Debug)**. |
 | `F3` | Alternar reporte de métricas en consola: **Compacto** $\to$ **Detallado** $\to$ **Desactivado (Off)**. |
 | `Escape` | Cerrar la aplicación. |
+
+La mira azul grisácea de ocho segmentos se dibuja como overlay en el framebuffer
+CPU. Su posición corresponde a la trayectoria frontal real de la nave proyectada
+a un segundo de vuelo del proyectil, por lo que acompaña los giros aunque la
+cámara de persecución todavía se esté suavizando. Se oculta mientras la nave
+está destruida.
 
 El proyecto inicia en modo pacífico, sin enemigos. Al presionar `F4`, los
 visitantes aparecen detrás del Sol y siguen a la nave en modo de supervisión,
@@ -229,7 +235,7 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 13. Pruebas Automatizadas
 
-El proyecto cuenta con 78 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con 80 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
 - **Pipeline de Renderizado y Paralelización** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos de posición, normal, tangente y UV), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, partición horizontal de pantalla en franjas disjuntas (*Scanline Slicing*) y verificación de equivalencia determinista idéntica píxel por píxel entre renderizado monohilo y multihilo en CPU.
 - **Descarte de Visión / Frustum Culling** (`frustum_tests.rs`): Extracción analítica de los 6 planos del frustum desde la matriz de Vista-Proyección ($VP = P \cdot V$) mediante Gribb-Hartmann, normalización de planos, distancias signadas, intersección analítica con esferas envolventes, descarte estricto en los 6 ejes y acumulación de métricas diagnósticas.
@@ -263,7 +269,7 @@ El proyecto cuenta con 78 pruebas automatizadas deterministas divididas modularm
   - Implementación del sistema de distribución procedural de objetos en superficie esférica con orientación curva, enraizamiento geométrico universal y descarte por distancia suave (`src/scene/surface.rs`).
   - Implementación del sistema de Frustum Culling analítico mediante extracción de planos Gribb-Hartmann y descarte esférico multinivel (`src/camera.rs`).
   - Implementación del sistema de paralelización de renderizado en CPU sin dependencias externas mediante partición horizontal de pantalla en franjas contiguas disjuntas (*Scanline Slicing*) con `std::thread::scope` en rasterización y `SkyShader`.
-  - Batería de 78 pruebas deterministas modulares y documentación técnica.
+  - Batería de 80 pruebas deterministas modulares y documentación técnica.
 
 ---
 

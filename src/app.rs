@@ -2,7 +2,7 @@ use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::camera::Camera;
 use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh};
 use crate::config::AppConfig;
-use crate::hud::{draw_health_bar, project_world_to_screen};
+use crate::hud::{draw_aim_reticle, draw_health_bar, project_world_to_screen};
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
@@ -901,6 +901,21 @@ impl App {
             &self.combat.enemies,
             self.config.enemies.target_length_wu,
         );
+
+        if self.combat.player_is_alive() {
+            let forward = self.ship_state.forward();
+            let projectile_velocity =
+                self.ship_state.velocity + forward * self.config.enemies.player_projectile_speed;
+            let aim_point = self.ship_state.position + forward + projectile_velocity;
+            if let Some((x, y)) = project_world_to_screen(
+                &vp_matrix,
+                aim_point,
+                self.framebuffer.width,
+                self.framebuffer.height,
+            ) {
+                draw_aim_reticle(&mut self.framebuffer, x, y);
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
