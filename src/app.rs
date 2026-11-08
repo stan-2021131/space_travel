@@ -215,7 +215,7 @@ impl App {
 
         // 2. Estado de la nave y cámara
         let ship_state = ShipState::new(&config.ship);
-        let combat = CombatSystem::new(&config.enemies);
+        let combat = CombatSystem::new(&config.enemies, config.ship.max_speed);
         let aspect = Self::WINDOW_WIDTH as f32 / Self::WINDOW_HEIGHT as f32;
         let mut camera = Camera::new(
             ship_state.position - ship_state.forward() * config.camera.distance_behind
@@ -471,8 +471,12 @@ impl App {
         self.plasma_shader.set_time(self.sim_time);
         self.enemy_shader.set_time(self.sim_time);
 
-        // Movimiento de la nave
-        self.ship_state.update(input, &self.config.ship, dt);
+        // Una nave destruida permanece ausente e inmóvil hasta reaparecer.
+        if self.combat.player_is_alive() {
+            self.ship_state.update(input, &self.config.ship, dt);
+        } else {
+            self.ship_state.velocity = Vec3::zero();
+        }
 
         // Órbitas y rotación axial calculadas analíticamente por tiempo
         self.sun_body.update(self.sim_time);
@@ -482,16 +486,18 @@ impl App {
 
         // Envolventes compartidas: Sol, planetas y objetos de superficie.
         let obstacles = self.collect_collision_obstacles();
-        for &obstacle in &obstacles {
-            resolve_sphere_collision(
-                &mut self.ship_state.position,
-                &mut self.ship_state.velocity,
-                self.ship_state.collision_radius,
-                obstacle,
-            );
+        if self.combat.player_is_alive() {
+            for &obstacle in &obstacles {
+                resolve_sphere_collision(
+                    &mut self.ship_state.position,
+                    &mut self.ship_state.velocity,
+                    self.ship_state.collision_radius,
+                    obstacle,
+                );
+            }
         }
 
-        if input.fire {
+        if input.fire && self.combat.player_is_alive() {
             self.combat.try_player_fire(
                 self.sim_time,
                 self.ship_state.position,
@@ -535,6 +541,7 @@ impl App {
             );
         }
         if combat_update.player_destroyed {
+            self.ship_state.velocity = Vec3::zero();
             println!(
                 "[NAVE] Nave destruida. Reaparición automática en {:.0} segundos.",
                 self.config.enemies.player_respawn_delay
@@ -851,34 +858,37 @@ impl App {
             );
         }
 
-        // 4. Nave (con Frustum Culling)
-        let ship_radius = self.ship_mesh.geometric_radius() * self.ship_scale;
-        if !frustum.intersects_sphere(self.ship_state.position, ship_radius) {
-            stats.objetos_descartados_frustum += 1;
-            stats.triangulos_descartados_frustum += self.ship_mesh.indices.len() / 3;
-        } else {
-            let ship_center = self.ship_mesh.aabb.center();
-            let ship_model = Mat4::from_translation(self.ship_state.position)
-                * self.ship_state.rotation_matrix()
-                * Mat4::uniform_scaling(self.ship_scale)
-                * Mat4::from_translation(-ship_center);
-            let ship_rot = self.ship_state.rotation_matrix();
+        // 4. Nave. Durante la espera de reaparición no se dibuja ni participa
+        // en la simulación; si está viva, conserva el descarte por frustum.
+        if self.combat.player_is_alive() {
+            let ship_radius = self.ship_mesh.geometric_radius() * self.ship_scale;
+            if !frustum.intersects_sphere(self.ship_state.position, ship_radius) {
+                stats.objetos_descartados_frustum += 1;
+                stats.triangulos_descartados_frustum += self.ship_mesh.indices.len() / 3;
+            } else {
+                let ship_center = self.ship_mesh.aabb.center();
+                let ship_model = Mat4::from_translation(self.ship_state.position)
+                    * self.ship_state.rotation_matrix()
+                    * Mat4::uniform_scaling(self.ship_scale)
+                    * Mat4::from_translation(-ship_center);
+                let ship_rot = self.ship_state.rotation_matrix();
 
-            Self::draw_mesh(
-                &mut self.renderer,
-                self.shader_mode,
-                &self.depth_shader,
-                &self.normals_shader,
-                &self.toon_shader,
-                &self.ship_shader,
-                &self.ship_mesh,
-                &ship_model,
-                &ship_rot,
-                &vp_matrix,
-                &self.ship_mesh.material,
-                &mut target,
-                stats,
-            );
+                Self::draw_mesh(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.ship_shader,
+                    &self.ship_mesh,
+                    &ship_model,
+                    &ship_rot,
+                    &vp_matrix,
+                    &self.ship_mesh.material,
+                    &mut target,
+                    stats,
+                );
+            }
         }
 
         // Las barras se dibujan al final como overlay del framebuffer CPU.
@@ -906,12 +916,14 @@ impl App {
         let width = framebuffer.width;
         let height = framebuffer.height;
 
-        if let Some((x, y)) = project_world_to_screen(
-            view_projection,
-            ship_position + Vec3::up() * 1.0,
-            width,
-            height,
-        ) {
+        if ship_health > 0.0
+            && let Some((x, y)) = project_world_to_screen(
+                view_projection,
+                ship_position + Vec3::up() * 1.0,
+                width,
+                height,
+            )
+        {
             draw_health_bar(
                 framebuffer,
                 x,

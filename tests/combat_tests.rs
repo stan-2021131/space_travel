@@ -12,7 +12,7 @@ fn config() -> AppConfig {
 #[test]
 fn peaceful_mode_starts_without_enemies_and_with_full_health() {
     let cfg = config();
-    let combat = CombatSystem::new(&cfg.enemies);
+    let combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
 
     assert_eq!(combat.state, EncounterState::Dormant);
     assert!(combat.enemies.is_empty());
@@ -23,7 +23,7 @@ fn peaceful_mode_starts_without_enemies_and_with_full_health() {
 #[test]
 fn activation_spawns_supervisors_behind_the_sun() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     let ship = Vec3::new(0.0, 0.0, 200.0);
     let sun = Vec3::zero();
 
@@ -43,7 +43,7 @@ fn activation_spawns_supervisors_behind_the_sun() {
 #[test]
 fn supervisors_follow_but_never_fire() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     let ship = Vec3::new(0.0, 0.0, 20.0);
     combat.activate(ship, Vec3::zero(), cfg.sun.radius, &cfg.enemies);
 
@@ -67,7 +67,7 @@ fn supervisors_follow_but_never_fire() {
 #[test]
 fn destroying_first_enemy_starts_attack_mode() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     let ship = Vec3::zero();
     combat.activate(ship, Vec3::new(0.0, 0.0, -100.0), 10.0, &cfg.enemies);
 
@@ -90,7 +90,7 @@ fn destroying_first_enemy_starts_attack_mode() {
 #[test]
 fn enemies_only_fire_after_attack_mode_begins() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     let ship = Vec3::zero();
     combat.activate(ship, Vec3::new(0.0, 0.0, -100.0), 10.0, &cfg.enemies);
     for enemy in &mut combat.enemies {
@@ -118,7 +118,7 @@ fn enemies_only_fire_after_attack_mode_begins() {
 #[test]
 fn enemy_projectile_reduces_player_health() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     combat.projectiles.push(Projectile {
         owner: ProjectileOwner::Enemy,
         position: Vec3::zero(),
@@ -136,7 +136,7 @@ fn enemy_projectile_reduces_player_health() {
 #[test]
 fn twenty_seconds_without_player_fire_starts_static_observation() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     let ship = Vec3::zero();
     combat.activate(ship, Vec3::new(0.0, 0.0, -100.0), 10.0, &cfg.enemies);
     combat.state = EncounterState::Attacking;
@@ -175,7 +175,7 @@ fn twenty_seconds_without_player_fire_starts_static_observation() {
 #[test]
 fn peaceful_observers_stay_still_and_keep_looking_at_ship() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     combat.activate(
         Vec3::new(0.0, 0.0, 100.0),
         Vec3::zero(),
@@ -198,7 +198,7 @@ fn peaceful_observers_stay_still_and_keep_looking_at_ship() {
 #[test]
 fn firing_again_reactivates_peaceful_observers() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     combat.activate(
         Vec3::zero(),
         Vec3::new(0.0, 0.0, -100.0),
@@ -220,7 +220,7 @@ fn firing_again_reactivates_peaceful_observers() {
 #[test]
 fn destroyed_player_respawns_instead_of_remaining_soft_locked() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     combat.projectiles.push(Projectile {
         owner: ProjectileOwner::Enemy,
         position: Vec3::zero(),
@@ -233,6 +233,16 @@ fn destroyed_player_respawns_instead_of_remaining_soft_locked() {
     let destroyed = combat.update(0.0, 0.0, Vec3::zero(), &cfg.enemies);
     assert!(destroyed.player_destroyed);
     assert_eq!(combat.player_health, 0.0);
+    assert!(!combat.player_is_alive());
+
+    let still_destroyed = combat.update(
+        cfg.enemies.player_respawn_delay - 0.01,
+        0.0,
+        Vec3::zero(),
+        &cfg.enemies,
+    );
+    assert!(!still_destroyed.player_respawned);
+    assert!(!combat.player_is_alive());
 
     let respawned = combat.update(
         cfg.enemies.player_respawn_delay + 0.1,
@@ -242,6 +252,45 @@ fn destroyed_player_respawns_instead_of_remaining_soft_locked() {
     );
     assert!(respawned.player_respawned);
     assert_eq!(combat.player_health, cfg.enemies.player_max_health);
+    assert!(combat.player_is_alive());
+}
+
+#[test]
+fn supervising_enemies_are_slow_enough_for_the_player_to_escape() {
+    let cfg = config();
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
+    let ship = Vec3::new(0.0, 0.0, 1_000.0);
+    combat.activate(ship, Vec3::new(0.0, 0.0, -100.0), 10.0, &cfg.enemies);
+    combat.enemies.truncate(1);
+    combat.enemies[0].position = Vec3::zero();
+
+    for step in 0..200 {
+        combat.update(step as f32 * 0.05, 0.05, ship, &cfg.enemies);
+    }
+
+    let expected_speed = cfg.ship.max_speed * cfg.enemies.supervising_speed_ratio;
+    let actual_speed = combat.enemies[0].velocity.length();
+    assert!((actual_speed - expected_speed).abs() < 0.01);
+    assert!(actual_speed < cfg.ship.max_speed);
+}
+
+#[test]
+fn attacking_enemies_reach_eighty_percent_of_player_max_speed() {
+    let cfg = config();
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
+    let ship = Vec3::new(0.0, 0.0, 1_000.0);
+    combat.activate(ship, Vec3::new(0.0, 0.0, -100.0), 10.0, &cfg.enemies);
+    combat.state = EncounterState::Attacking;
+    combat.enemies.truncate(1);
+    combat.enemies[0].position = Vec3::zero();
+
+    for step in 0..200 {
+        combat.update(step as f32 * 0.05, 0.05, ship, &cfg.enemies);
+    }
+
+    let expected_speed = cfg.ship.max_speed * 0.80;
+    let actual_speed = combat.enemies[0].velocity.length();
+    assert!((actual_speed - expected_speed).abs() < 0.01);
 }
 
 #[test]
@@ -256,7 +305,7 @@ fn enemy_model_loads_and_has_triangles() {
 #[test]
 fn corrected_enemy_nose_points_at_player() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     combat.activate(
         Vec3::new(20.0, 5.0, 30.0),
         Vec3::zero(),
@@ -280,7 +329,7 @@ fn corrected_enemy_nose_points_at_player() {
 #[test]
 fn enemies_cannot_cross_spherical_obstacles() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     combat.activate(
         Vec3::zero(),
         Vec3::new(0.0, 0.0, -100.0),
@@ -308,7 +357,7 @@ fn enemies_cannot_cross_spherical_obstacles() {
 #[test]
 fn observing_enemies_remain_static_after_collision_resolution() {
     let cfg = config();
-    let mut combat = CombatSystem::new(&cfg.enemies);
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
     combat.activate(
         Vec3::zero(),
         Vec3::new(0.0, 0.0, -100.0),

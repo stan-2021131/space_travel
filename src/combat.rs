@@ -73,10 +73,11 @@ pub struct CombatSystem {
     next_wave_time: Option<f32>,
     last_player_shot_time: Option<f32>,
     player_destroyed_at: Option<f32>,
+    player_max_speed: f32,
 }
 
 impl CombatSystem {
-    pub fn new(config: &EnemyConfig) -> Self {
+    pub fn new(config: &EnemyConfig, player_max_speed: f32) -> Self {
         Self {
             state: EncounterState::Dormant,
             enemies: Vec::new(),
@@ -88,11 +89,16 @@ impl CombatSystem {
             next_wave_time: None,
             last_player_shot_time: None,
             player_destroyed_at: None,
+            player_max_speed,
         }
     }
 
     pub fn encounter_active(&self) -> bool {
         self.state != EncounterState::Dormant
+    }
+
+    pub fn player_is_alive(&self) -> bool {
+        self.player_health > 0.0
     }
 
     pub fn restore_player_health(&mut self, config: &EnemyConfig) {
@@ -251,6 +257,7 @@ impl CombatSystem {
     ) -> usize {
         let mut collision_count = 0;
         let observing = self.state == EncounterState::Observing;
+        let movement_speed = self.enemy_speed(config);
         for enemy in &mut self.enemies {
             for &obstacle in obstacles {
                 if resolve_sphere_collision(
@@ -263,7 +270,7 @@ impl CombatSystem {
                     let normal = (enemy.position - obstacle.center).normalize();
                     if observing {
                         enemy.velocity = Vec3::zero();
-                    } else if enemy.velocity.length() < config.move_speed * 0.25 {
+                    } else if enemy.velocity.length() < movement_speed * 0.25 {
                         let reference = if normal.dot(Vec3::up()).abs() < 0.95 {
                             Vec3::up()
                         } else {
@@ -271,7 +278,7 @@ impl CombatSystem {
                         };
                         let side_sign = if enemy.id % 2 == 0 { 1.0 } else { -1.0 };
                         enemy.velocity = reference.cross(normal).normalize()
-                            * (config.move_speed * 0.55 * side_sign);
+                            * (movement_speed * 0.55 * side_sign);
                     }
                 }
             }
@@ -285,6 +292,12 @@ impl CombatSystem {
         }
 
         let may_fire = self.state == EncounterState::Attacking;
+        let movement_speed = self.enemy_speed(config);
+        let preferred_distance = if self.state == EncounterState::Supervising {
+            config.supervising_distance
+        } else {
+            config.preferred_distance
+        };
         let mut spawned_projectiles = Vec::new();
 
         for enemy in &mut self.enemies {
@@ -302,15 +315,15 @@ impl CombatSystem {
                 continue;
             }
 
-            let desired_velocity = if distance > config.preferred_distance * 1.15 {
-                direction * config.move_speed
-            } else if distance < config.preferred_distance * 0.70 {
-                -direction * (config.move_speed * 0.65)
+            let desired_velocity = if distance > preferred_distance * 1.15 {
+                direction * movement_speed
+            } else if distance < preferred_distance * 0.70 {
+                -direction * (movement_speed * 0.65)
             } else {
                 // En la distancia de supervisión se desplazan lateralmente para
                 // no amontonarse frente a la nave.
                 let tangent = direction.cross(Vec3::up()).normalize();
-                tangent * (config.move_speed * 0.35)
+                tangent * (movement_speed * 0.35)
             };
             let steering = 1.0 - (-config.steering_response * dt).exp();
             enemy.velocity = enemy.velocity.lerp(desired_velocity, steering);
@@ -334,6 +347,15 @@ impl CombatSystem {
         }
 
         self.projectiles.extend(spawned_projectiles);
+    }
+
+    fn enemy_speed(&self, config: &EnemyConfig) -> f32 {
+        let ratio = match self.state {
+            EncounterState::Supervising => config.supervising_speed_ratio,
+            EncounterState::Attacking => config.attacking_speed_ratio,
+            EncounterState::Dormant | EncounterState::Observing => 0.0,
+        };
+        self.player_max_speed * ratio
     }
 
     fn update_projectiles(&mut self, dt: f32) {

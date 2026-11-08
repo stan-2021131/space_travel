@@ -22,6 +22,9 @@ fn test_valid_configuration_loading() {
     assert!(config.enemies.player_max_health > 0.0);
     assert_eq!(config.enemies.peace_after_no_fire_seconds, 20.0);
     assert!(config.enemies.player_respawn_delay > 0.0);
+    assert_eq!(config.enemies.supervising_speed_ratio, 0.35);
+    assert_eq!(config.enemies.attacking_speed_ratio, 0.80);
+    assert!(config.enemies.supervising_distance > config.enemies.preferred_distance);
     assert!(config.sun.radius > 0.0);
     assert!(!config.planets.is_empty());
     assert_eq!(config.planets[0].id, "rocoso");
@@ -60,6 +63,19 @@ fn test_invalid_configuration_rejections() {
     let mut bad_enemies = valid.clone();
     bad_enemies.enemies.initial_count = 0;
     assert!(bad_enemies.validate(Path::new("test.toml")).is_err());
+
+    let mut bad_attack_speed = valid.clone();
+    bad_attack_speed.enemies.attacking_speed_ratio = 1.1;
+    assert!(bad_attack_speed.validate(Path::new("test.toml")).is_err());
+
+    let mut bad_supervision_speed = valid.clone();
+    bad_supervision_speed.enemies.supervising_speed_ratio =
+        bad_supervision_speed.enemies.attacking_speed_ratio;
+    assert!(
+        bad_supervision_speed
+            .validate(Path::new("test.toml"))
+            .is_err()
+    );
 
     // Suavizado de cámara <= 0
     let mut bad_cam = valid.clone();
