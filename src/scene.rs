@@ -23,6 +23,10 @@ pub struct CelestialBody {
     pub rotation_rad: f32,
     pub shader_type: String,
     pub surface_groups: Vec<SurfaceGroup>,
+    pub gravity_strength: f32,
+    pub gravity_radius: f32,
+    pub visible_gravity: bool,
+    pub gravity_mesh: Option<Arc<Mesh>>,
 }
 
 impl CelestialBody {
@@ -53,5 +57,10 @@ impl CelestialBody {
     /// Retorna la matriz de rotación pura para transformar normales con escala uniforme.
     pub fn rotation_matrix(&self) -> Mat4 {
         Mat4::rotation_y(self.rotation_rad)
+    }
+
+    /// Retorna la matriz de modelo para la esfera de campo gravitatorio (centrada en el cuerpo, escalada a gravity_radius).
+    pub fn gravity_field_model_matrix(&self) -> Mat4 {
+        Mat4::from_translation(self.position) * Mat4::uniform_scaling(self.gravity_radius)
     }
 }

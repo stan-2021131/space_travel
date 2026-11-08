@@ -348,13 +348,7 @@ fn test_multithreaded_vs_singlethreaded_pixel_identity() {
     let mut shader = DiffuseShader::new();
     shader.light_dir = Vec3::new(2.0, 3.0, 5.0).normalize();
 
-    let ctx = RenderContext {
-        model_matrix: &model,
-        rotation_matrix: &rot,
-        view_proj_matrix: &vp,
-        material: &mat,
-        shader: &shader,
-    };
+    let ctx = RenderContext::new(&model, &rot, &vp, &mat, &shader);
 
     // 1. Renderizado monohilo (1 banda)
     let mut fb_single = Framebuffer::new(64, 64);

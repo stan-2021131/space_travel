@@ -8,9 +8,10 @@ use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
 use crate::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
 use crate::pipeline::{
-    AlienEnergyShader, DepthDebugShader, EmissiveShader, FragmentShader, NormalMappedShader,
-    NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget,
-    ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
+    AlienEnergyShader, BlendMode, DepthDebugShader, EmissiveShader, ForceFieldShader,
+    FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
+    RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
+    TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
     CelestialBody,
@@ -50,12 +51,14 @@ pub struct App {
     sim_time: f32,
     accumulator: f32,
     pub shader_mode: ShaderMode,
+    pub gravity_enabled: bool,
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
     normal_mapped_shader: NormalMappedShader,
     rock_shader: ProceduralRockShader,
     plasma_shader: PlasmaShader,
+    force_field_shader: ForceFieldShader,
     ship_shader: ShipShader,
     enemy_shader: AlienEnergyShader,
     enemy_material: Material,
@@ -112,6 +115,13 @@ impl App {
         let sun_geo_radius = sun_mesh.geometric_radius().max(1e-4);
         let sun_scale = config.sun.radius / sun_geo_radius;
 
+        let sun_effective_grav_radius = config.sun.effective_gravity_radius();
+        let sun_grav_mesh = if config.sun.visible_gravity {
+            Some(Arc::new(crate::procedural::generate_icosphere(1.0, 2)))
+        } else {
+            None
+        };
+
         let sun_body = CelestialBody {
             id: config.sun.id.clone(),
             material: sun_mesh.material.clone(),
@@ -127,6 +137,10 @@ impl App {
             rotation_rad: 0.0,
             shader_type: config.sun.shader.clone(),
             surface_groups: Vec::new(),
+            gravity_strength: config.sun.gravity_strength,
+            gravity_radius: sun_effective_grav_radius,
+            visible_gravity: config.sun.visible_gravity,
+            gravity_mesh: sun_grav_mesh,
         };
 
         let mut planets = Vec::new();
@@ -195,6 +209,13 @@ impl App {
                 ));
             }
 
+            let p_effective_grav_radius = p_cfg.effective_gravity_radius();
+            let p_grav_mesh = if p_cfg.visible_gravity {
+                Some(Arc::new(crate::procedural::generate_icosphere(1.0, 2)))
+            } else {
+                None
+            };
+
             planets.push(CelestialBody {
                 id: p_cfg.id.clone(),
                 material: p_mesh.material.clone(),
@@ -210,6 +231,10 @@ impl App {
                 rotation_rad: 0.0,
                 shader_type: p_cfg.shader.clone(),
                 surface_groups,
+                gravity_strength: p_cfg.gravity_strength,
+                gravity_radius: p_effective_grav_radius,
+                visible_gravity: p_cfg.visible_gravity,
+                gravity_mesh: p_grav_mesh,
             });
         }
 
@@ -268,10 +293,12 @@ impl App {
             sim_time: 0.0,
             accumulator: 0.0,
             shader_mode: ShaderMode::Normal,
+            gravity_enabled: true,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
             normal_mapped_shader,
             rock_shader,
             plasma_shader,
+            force_field_shader: ForceFieldShader::new(camera.eye),
             ship_shader,
             enemy_shader,
             enemy_material: Material::new("EnemyHull", Vec3::new(0.55, 0.72, 1.0), None),
@@ -328,6 +355,7 @@ impl App {
         println!("  [Flecha Abajo]   : Pitch abajo");
         println!("  [Q] / [E]        : Roll (Alabeo)");
         println!("  [R]              : Reiniciar posición y orientación de la nave");
+        println!("  [G]              : Alternar gravedad planetaria (ON / OFF)");
         println!("  [Espacio]        : Disparar");
         println!("  [F4]             : Activar/desactivar encuentro con enemigos");
         println!(
@@ -424,6 +452,18 @@ impl App {
             println!("[SIMULACIÓN] Nave reiniciada a posición inicial.");
         }
 
+        if rl.is_key_pressed(KeyboardKey::KEY_G) {
+            self.gravity_enabled = !self.gravity_enabled;
+            println!(
+                "[FÍSICA] Gravedad planetaria: {}",
+                if self.gravity_enabled {
+                    "ACTIVADA"
+                } else {
+                    "DESACTIVADA"
+                }
+            );
+        }
+
         if rl.is_key_pressed(KeyboardKey::KEY_F4) {
             if self.combat.encounter_active() {
                 self.combat.deactivate();
@@ -482,6 +522,26 @@ impl App {
         self.sun_body.update(self.sim_time);
         for planet in &mut self.planets {
             planet.update(self.sim_time);
+        }
+
+        // Atracción gravitatoria hacia cuerpos celestes si está activada
+        if self.gravity_enabled && self.combat.player_is_alive() {
+            self.ship_state.apply_gravitational_attraction(
+                self.sun_body.position,
+                self.sun_body.radius,
+                self.sun_body.gravity_radius,
+                self.sun_body.gravity_strength,
+                dt,
+            );
+            for planet in &self.planets {
+                self.ship_state.apply_gravitational_attraction(
+                    planet.position,
+                    planet.radius,
+                    planet.gravity_radius,
+                    planet.gravity_strength,
+                    dt,
+                );
+            }
         }
 
         // Envolventes compartidas: Sol, planetas y objetos de superficie.
@@ -891,6 +951,49 @@ impl App {
             }
         }
 
+        // 5. Esferas semitransparentes de campo gravitatorio / atmósfera (Alpha Blending)
+        self.force_field_shader.camera_pos = self.camera.eye;
+        self.force_field_shader.sim_time = self.sim_time;
+        let field_material = Material::default();
+
+        if self.sun_body.visible_gravity
+            && let Some(ref field_mesh) = self.sun_body.gravity_mesh
+            && frustum.intersects_sphere(self.sun_body.position, self.sun_body.gravity_radius)
+        {
+            let field_model = self.sun_body.gravity_field_model_matrix();
+            let field_rot = self.sun_body.rotation_matrix();
+            let ctx = RenderContext::new(
+                &field_model,
+                &field_rot,
+                &vp_matrix,
+                &field_material,
+                &self.force_field_shader,
+            )
+            .with_blend_mode(BlendMode::AlphaBlend);
+            self.renderer
+                .render_mesh(field_mesh, &ctx, &mut target, stats);
+        }
+
+        for planet in &self.planets {
+            if planet.visible_gravity
+                && let Some(ref field_mesh) = planet.gravity_mesh
+                && frustum.intersects_sphere(planet.position, planet.gravity_radius)
+            {
+                let field_model = planet.gravity_field_model_matrix();
+                let field_rot = planet.rotation_matrix();
+                let ctx = RenderContext::new(
+                    &field_model,
+                    &field_rot,
+                    &vp_matrix,
+                    &field_material,
+                    &self.force_field_shader,
+                )
+                .with_blend_mode(BlendMode::AlphaBlend);
+                self.renderer
+                    .render_mesh(field_mesh, &ctx, &mut target, stats);
+            }
+        }
+
         // Las barras se dibujan al final como overlay del framebuffer CPU.
         Self::draw_entity_health_bars(
             &mut self.framebuffer,
@@ -982,43 +1085,43 @@ impl App {
     ) {
         match shader_mode {
             ShaderMode::Normal => {
-                let ctx = RenderContext {
+                let ctx = RenderContext::new(
                     model_matrix,
                     rotation_matrix,
-                    view_proj_matrix: vp_matrix,
+                    vp_matrix,
                     material,
-                    shader: base_shader,
-                };
+                    base_shader,
+                );
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }
             ShaderMode::Toon => {
-                let ctx = RenderContext {
+                let ctx = RenderContext::new(
                     model_matrix,
                     rotation_matrix,
-                    view_proj_matrix: vp_matrix,
+                    vp_matrix,
                     material,
-                    shader: toon_shader,
-                };
+                    toon_shader,
+                );
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }
             ShaderMode::DepthDebug => {
-                let ctx = RenderContext {
+                let ctx = RenderContext::new(
                     model_matrix,
                     rotation_matrix,
-                    view_proj_matrix: vp_matrix,
+                    vp_matrix,
                     material,
-                    shader: depth_shader,
-                };
+                    depth_shader,
+                );
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }
             ShaderMode::NormalsDebug => {
-                let ctx = RenderContext {
+                let ctx = RenderContext::new(
                     model_matrix,
                     rotation_matrix,
-                    view_proj_matrix: vp_matrix,
+                    vp_matrix,
                     material,
-                    shader: normals_shader,
-                };
+                    normals_shader,
+                );
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }
         }

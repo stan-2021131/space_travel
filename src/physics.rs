@@ -202,4 +202,50 @@ impl ShipState {
             CollisionSphere::new(body_center, body_radius + margin),
         )
     }
+
+    /// Aplica atracción gravitatoria newtoniana suave dirigida hacia el centro de un cuerpo celeste.
+    ///
+    /// - `body_center`: Posición 3D del centro de masa del cuerpo.
+    /// - `body_radius`: Radio físico de la superficie (evita singularidades).
+    /// - `gravity_radius`: Radio máximo de la esfera de influencia gravitatoria.
+    /// - `surface_gravity`: Aceleración nominal en la superficie física del cuerpo (g0).
+    /// - `dt`: Delta de tiempo en segundos.
+    ///
+    /// Retorna `Some(a)` con el vector de aceleración aplicado, o `None` si la nave está fuera del campo.
+    pub fn apply_gravitational_attraction(
+        &mut self,
+        body_center: Vec3,
+        body_radius: f32,
+        gravity_radius: f32,
+        surface_gravity: f32,
+        dt: f32,
+    ) -> Option<Vec3> {
+        if surface_gravity <= 0.0 || gravity_radius <= body_radius || dt <= 0.0 {
+            return None;
+        }
+
+        let to_center = body_center - self.position;
+        let dist = to_center.length();
+
+        // Fuera de la esfera de influencia o centro coincidente
+        if dist > gravity_radius || dist < 1e-4 {
+            return None;
+        }
+
+        let direction = to_center / dist;
+
+        // 1. Ley de inverso del cuadrado protegida contra singularidad en la superficie
+        let clamped_dist = dist.max(body_radius);
+        let ratio = body_radius / clamped_dist;
+        let base_accel = surface_gravity * (ratio * ratio);
+
+        // 2. Factor de caída suave (smoothstep) en el borde exterior para evitar discontinuidades
+        let t = ((gravity_radius - dist) / (gravity_radius - body_radius)).clamp(0.0, 1.0);
+        let smooth_falloff = t * t * (3.0 - 2.0 * t);
+
+        let accel = direction * (base_accel * smooth_falloff);
+        self.velocity += accel * dt;
+
+        Some(accel)
+    }
 }

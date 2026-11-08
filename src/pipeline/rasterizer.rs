@@ -24,6 +24,16 @@ pub struct VertexOut {
     pub uv_div_w: Vec2,
 }
 
+/// Modo de mezcla para la rasterización de fragmentos en el framebuffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BlendMode {
+    /// Opaco estándar: Z-Test con Z-Write y sobrescritura del píxel.
+    #[default]
+    Opaque,
+    /// Semitransparente: Z-Test sin Z-Write y mezcla alfa en el framebuffer.
+    AlphaBlend,
+}
+
 impl VertexOut {
     /// Convierte un `ClipVertex` al espacio de pantalla (Viewport) realizando la división de perspectiva.
     pub fn from_clip_vertex(cv: &ClipVertex, width: f32, height: f32) -> Self {
@@ -101,6 +111,7 @@ pub fn rasterize_triangle_band<S: FragmentShader>(
     band: &mut crate::buffer::RenderBand<'_>,
     material: &Material,
     shader: &S,
+    blend_mode: BlendMode,
     stats: &mut FrameStats,
 ) -> bool {
     let raw_min_x = v0
@@ -179,7 +190,12 @@ pub fn rasterize_triangle_band<S: FragmentShader>(
             if w0 >= EPS && w1 >= EPS && w2 >= EPS {
                 let depth_ndc = w0 * v0.depth_ndc + w1 * v1.depth_ndc + w2 * v2.depth_ndc;
 
-                if band.test_and_set_depth(x, y, depth_ndc) {
+                let passes_depth = match blend_mode {
+                    BlendMode::Opaque => band.test_and_set_depth(x, y, depth_ndc),
+                    BlendMode::AlphaBlend => band.test_depth_only(x, y, depth_ndc),
+                };
+
+                if passes_depth {
                     stats.fragmentos_aceptados_depth += 1;
 
                     let inv_w = w0 * v0.inv_w + w1 * v1.inv_w + w2 * v2.inv_w;
@@ -210,7 +226,10 @@ pub fn rasterize_triangle_band<S: FragmentShader>(
                     };
 
                     let color = shader.shade(&input);
-                    band.set_pixel(x, y, color);
+                    match blend_mode {
+                        BlendMode::Opaque => band.set_pixel(x, y, color),
+                        BlendMode::AlphaBlend => band.blend_pixel(x, y, color),
+                    }
                 }
             }
 
@@ -247,7 +266,16 @@ pub fn rasterize_triangle<S: FragmentShader>(
         pixels: framebuffer.as_mut_slice(),
         depth: depth_buffer.as_mut_slice(),
     };
-    if rasterize_triangle_band(v0, v1, v2, &mut band, material, shader, stats) {
+    if rasterize_triangle_band(
+        v0,
+        v1,
+        v2,
+        &mut band,
+        material,
+        shader,
+        BlendMode::Opaque,
+        stats,
+    ) {
         stats.triangulos_rasterizados += 1;
     }
 }
