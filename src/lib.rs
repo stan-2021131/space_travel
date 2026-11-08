@@ -19,7 +19,10 @@ pub use buffer::{Color, DepthBuffer, Framebuffer};
 pub use camera::{Camera, Frustum, Plane};
 pub use combat::{CombatSystem, EncounterState, Enemy, Projectile, ProjectileOwner};
 pub use config::AppConfig;
-pub use hud::{draw_aim_reticle, draw_health_bar, project_world_to_screen};
+pub use hud::{
+    draw_aim_reticle, draw_health_bar, draw_orbital_lock_reticle, draw_orbital_mode_badge,
+    project_world_to_screen,
+};
 pub use material::Material;
 pub use math::{Mat4, Transform, Vec2, Vec3, Vec4};
 pub use mesh::{AABB, Mesh, Vertex};

@@ -164,3 +164,128 @@ fn draw_diamond(
         );
     }
 }
+
+/// Dibuja un indicador orbital sobre el centro proyectado de un planeta cercano.
+///
+/// Si `is_active` es true, dibuja un brillo/marcador de fijación orbital activo.
+/// Si es false, dibuja corchetes sutiles de aproximación disponible.
+pub fn draw_orbital_lock_reticle(
+    framebuffer: &mut Framebuffer,
+    center_x: i32,
+    center_y: i32,
+    is_active: bool,
+) {
+    let size = if is_active { 18 } else { 14 };
+    let corner_len = if is_active { 7 } else { 5 };
+    let color = if is_active {
+        Color::rgb(60, 230, 255) // Cian brillante de enganche
+    } else {
+        Color::rgb(100, 160, 195) // Azul aero sutil
+    };
+    let outline = Color::rgb(18, 26, 42);
+
+    // Superior izquierda
+    draw_thick_segment(
+        framebuffer,
+        center_x - size,
+        center_y - size,
+        center_x - size + corner_len,
+        center_y - size,
+        1,
+        color,
+    );
+    draw_thick_segment(
+        framebuffer,
+        center_x - size,
+        center_y - size,
+        center_x - size,
+        center_y - size + corner_len,
+        1,
+        color,
+    );
+
+    // Superior derecha
+    draw_thick_segment(
+        framebuffer,
+        center_x + size,
+        center_y - size,
+        center_x + size - corner_len,
+        center_y - size,
+        1,
+        color,
+    );
+    draw_thick_segment(
+        framebuffer,
+        center_x + size,
+        center_y - size,
+        center_x + size,
+        center_y - size + corner_len,
+        1,
+        color,
+    );
+
+    // Inferior izquierda
+    draw_thick_segment(
+        framebuffer,
+        center_x - size,
+        center_y + size,
+        center_x - size + corner_len,
+        center_y + size,
+        1,
+        color,
+    );
+    draw_thick_segment(
+        framebuffer,
+        center_x - size,
+        center_y + size,
+        center_x - size,
+        center_y + size - corner_len,
+        1,
+        color,
+    );
+
+    // Inferior derecha
+    draw_thick_segment(
+        framebuffer,
+        center_x + size,
+        center_y + size,
+        center_x + size - corner_len,
+        center_y + size,
+        1,
+        color,
+    );
+    draw_thick_segment(
+        framebuffer,
+        center_x + size,
+        center_y + size,
+        center_x + size,
+        center_y + size - corner_len,
+        1,
+        color,
+    );
+
+    // Núcleo central
+    if is_active {
+        draw_diamond(framebuffer, center_x, center_y, 3, outline);
+        draw_diamond(framebuffer, center_x, center_y, 2, Color::rgb(255, 230, 80));
+    } else {
+        draw_diamond(framebuffer, center_x, center_y, 2, outline);
+        draw_diamond(framebuffer, center_x, center_y, 1, color);
+    }
+}
+
+/// Dibuja una insignia de estado del modo orbital en el HUD.
+pub fn draw_orbital_mode_badge(framebuffer: &mut Framebuffer, x: i32, y: i32, is_active: bool) {
+    let width = 76;
+    let height = 12;
+    let border_color = Color::rgb(35, 45, 65);
+    framebuffer.fill_rect(x, y, width, height, border_color);
+
+    if is_active {
+        framebuffer.fill_rect(x + 1, y + 1, width - 2, height - 2, Color::rgb(20, 80, 110));
+        framebuffer.fill_rect(x + 3, y + 3, 6, 6, Color::rgb(50, 240, 255));
+    } else {
+        framebuffer.fill_rect(x + 1, y + 1, width - 2, height - 2, Color::rgb(30, 35, 45));
+        framebuffer.fill_rect(x + 3, y + 3, 6, 6, Color::rgb(140, 160, 180));
+    }
+}

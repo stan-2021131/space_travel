@@ -2,7 +2,10 @@ use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::camera::Camera;
 use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh};
 use crate::config::AppConfig;
-use crate::hud::{draw_aim_reticle, draw_health_bar, project_world_to_screen};
+use crate::hud::{
+    draw_aim_reticle, draw_health_bar, draw_orbital_lock_reticle, draw_orbital_mode_badge,
+    project_world_to_screen,
+};
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
@@ -52,6 +55,8 @@ pub struct App {
     accumulator: f32,
     pub shader_mode: ShaderMode,
     pub gravity_enabled: bool,
+    pub local_flight_mode: bool,
+    pub nearby_planet_idx: Option<usize>,
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
@@ -294,6 +299,8 @@ impl App {
             accumulator: 0.0,
             shader_mode: ShaderMode::Normal,
             gravity_enabled: true,
+            local_flight_mode: false,
+            nearby_planet_idx: None,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
             normal_mapped_shader,
             rock_shader,
@@ -356,6 +363,9 @@ impl App {
         println!("  [Q] / [E]        : Roll (Alabeo)");
         println!("  [R]              : Reiniciar posición y orientación de la nave");
         println!("  [G]              : Alternar gravedad planetaria (ON / OFF)");
+        println!(
+            "  [C]              : Alternar modo de control local orbital (cerca de un planeta)"
+        );
         println!("  [Espacio]        : Disparar");
         println!("  [F4]             : Activar/desactivar encuentro con enemigos");
         println!(
@@ -386,14 +396,26 @@ impl App {
                 steps += 1;
             }
 
-            // 3. Suavizado de la cámara de persecución
-            self.camera.update_chase(
-                self.ship_state.position,
-                self.ship_state.forward(),
-                self.ship_state.up(),
-                &self.config.camera,
-                dt,
-            );
+            // 3. Suavizado de la cámara de persecución (modo normal detrás de la nave o panorámico centrado en el planeta)
+            if self.local_flight_mode
+                && let Some(idx) = self.nearby_planet_idx
+                && let Some(planet) = self.planets.get(idx)
+            {
+                self.camera.update_panoramic_planet_view(
+                    planet.position,
+                    planet.radius,
+                    &self.config.camera,
+                    dt,
+                );
+            } else {
+                self.camera.update_chase(
+                    self.ship_state.position,
+                    self.ship_state.forward(),
+                    self.ship_state.up(),
+                    &self.config.camera,
+                    dt,
+                );
+            }
 
             // 4. Renderizado en CPU y medición de métricas
             let frame_start = Instant::now();
@@ -464,6 +486,30 @@ impl App {
             );
         }
 
+        if rl.is_key_pressed(KeyboardKey::KEY_C) {
+            if self.nearby_planet_idx.is_some() {
+                self.local_flight_mode = !self.local_flight_mode;
+                let target_name = self
+                    .nearby_planet_idx
+                    .and_then(|idx| self.planets.get(idx))
+                    .map(|p| p.id.as_str())
+                    .unwrap_or("planeta");
+                println!(
+                    "[NAVEGACIÓN] Modo de control local orbital: {} (fijado a {})",
+                    if self.local_flight_mode {
+                        "ACTIVADO"
+                    } else {
+                        "DESACTIVADO"
+                    },
+                    target_name
+                );
+            } else {
+                println!(
+                    "[NAVEGACIÓN] No hay planetas en rango de aproximación para modo de control local."
+                );
+            }
+        }
+
         if rl.is_key_pressed(KeyboardKey::KEY_F4) {
             if self.combat.encounter_active() {
                 self.combat.deactivate();
@@ -522,6 +568,33 @@ impl App {
         self.sun_body.update(self.sim_time);
         for planet in &mut self.planets {
             planet.update(self.sim_time);
+        }
+
+        // Detección del planeta más próximo para aproximación y modo local orbital
+        let mut nearest_candidate: Option<(usize, f32)> = None;
+        for (idx, planet) in self.planets.iter().enumerate() {
+            let dist = (self.ship_state.position - planet.position).length();
+            let engagement_range = planet.gravity_radius.max(planet.radius * 2.8);
+            if dist <= engagement_range {
+                match nearest_candidate {
+                    Some((_, current_min)) if dist < current_min => {
+                        nearest_candidate = Some((idx, dist));
+                    }
+                    None => {
+                        nearest_candidate = Some((idx, dist));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.nearby_planet_idx = nearest_candidate.map(|(idx, _)| idx);
+
+        // Desacople automático si la nave se aleja fuera del radio orbital
+        if self.local_flight_mode && self.nearby_planet_idx.is_none() {
+            self.local_flight_mode = false;
+            println!(
+                "[NAVEGACIÓN] Nave fuera del rango orbital. Retornando a vista de persecución."
+            );
         }
 
         // Atracción gravitatoria hacia cuerpos celestes si está activada
@@ -1018,6 +1091,24 @@ impl App {
             ) {
                 draw_aim_reticle(&mut self.framebuffer, x, y);
             }
+        }
+
+        // Overlay HUD del Modo Panorámico Planetario
+        if let Some(idx) = self.nearby_planet_idx
+            && let Some(planet) = self.planets.get(idx)
+        {
+            // Marcador/brillo sobre el centro del planeta visible al aproximarse
+            if !self.local_flight_mode
+                && let Some((px, py)) = project_world_to_screen(
+                    &vp_matrix,
+                    planet.position,
+                    self.framebuffer.width,
+                    self.framebuffer.height,
+                )
+            {
+                draw_orbital_lock_reticle(&mut self.framebuffer, px, py, false);
+            }
+            draw_orbital_mode_badge(&mut self.framebuffer, 14, 14, self.local_flight_mode);
         }
     }
 
