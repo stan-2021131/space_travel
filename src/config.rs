@@ -24,8 +24,11 @@ pub struct EnemyConfig {
     pub wave_increment: usize,
     pub base_health: f32,
     pub health_growth_per_wave: f32,
-    pub move_speed: f32,
+    pub approaching_speed_ratio: f32,
+    pub supervising_speed_ratio: f32,
+    pub attacking_speed_ratio: f32,
     pub steering_response: f32,
+    pub supervising_distance: f32,
     pub preferred_distance: f32,
     pub fire_range: f32,
     pub enemy_fire_interval: f32,
@@ -217,8 +220,16 @@ impl AppConfig {
             || enemy.max_enemies < enemy.initial_count
             || enemy.target_length_wu <= 0.0
             || enemy.base_health <= 0.0
-            || enemy.move_speed <= 0.0
+            || !enemy.supervising_speed_ratio.is_finite()
+            || enemy.supervising_speed_ratio <= 0.0
+            || enemy.supervising_speed_ratio >= enemy.attacking_speed_ratio
+            || !enemy.attacking_speed_ratio.is_finite()
+            || enemy.attacking_speed_ratio >= enemy.approaching_speed_ratio
+            || !enemy.approaching_speed_ratio.is_finite()
+            || enemy.approaching_speed_ratio > 1.0
             || enemy.steering_response <= 0.0
+            || !enemy.supervising_distance.is_finite()
+            || enemy.supervising_distance <= enemy.preferred_distance
             || enemy.preferred_distance <= 0.0
             || enemy.fire_range <= 0.0
             || enemy.enemy_fire_interval <= 0.0
