@@ -80,42 +80,112 @@ pub fn generate_spherical_distribution(
         let local_pos = unit_dir * planet_radius;
         let local_normal = unit_dir;
 
-        // Construcción de la base ortonormal:
-        // El eje +Y del modelo coincidirá con la normal esférica hacia afuera
-        let up = local_normal;
-        let reference = if up.y.abs() < 0.99 {
-            Vec3::new(0.0, 1.0, 0.0)
-        } else {
-            Vec3::new(1.0, 0.0, 0.0)
-        };
-        let right = reference.cross(up).normalize();
-        let forward = right.cross(up).normalize();
-
-        // Base ortonormal como matriz de columnas:
-        // Columna 0: right (eje +X)
-        // Columna 1: up (eje +Y, normal del planeta)
-        // Columna 2: forward (eje +Z)
-        // Columna 3: componente homogénea afín sin traslación
-        let basis = Mat4::from_cols(
-            Vec4::new(right.x, right.y, right.z, 0.0),
-            Vec4::new(up.x, up.y, up.z, 0.0),
-            Vec4::new(forward.x, forward.y, forward.z, 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 1.0),
-        );
-
         // Giro pseudoaleatorio sobre la normal (yaw local)
         let yaw_angle = hash_f32(i as u32, seed) * std::f32::consts::TAU;
-        let yaw_rot = Mat4::rotation_y(yaw_angle);
 
-        // La rotación en Y local gira el objeto y luego basis lo orienta sobre la esfera
-        let local_basis = basis * yaw_rot;
-
-        instances.push(SurfaceInstance {
+        instances.push(create_surface_instance(
             local_pos,
             local_normal,
-            local_basis,
             base_scale,
-        });
+            yaw_angle,
+        ));
+    }
+
+    instances
+}
+
+/// Construye una instancia de superficie orientada con base ortonormal estable a lo largo de la normal local.
+pub fn create_surface_instance(
+    local_pos: Vec3,
+    local_normal: Vec3,
+    base_scale: f32,
+    yaw_angle: f32,
+) -> SurfaceInstance {
+    let up = local_normal.normalize();
+    let reference = if up.y.abs() < 0.99 {
+        Vec3::new(0.0, 1.0, 0.0)
+    } else {
+        Vec3::new(1.0, 0.0, 0.0)
+    };
+    let right = reference.cross(up).normalize();
+    let forward = right.cross(up).normalize();
+
+    let basis = Mat4::from_cols(
+        Vec4::new(right.x, right.y, right.z, 0.0),
+        Vec4::new(up.x, up.y, up.z, 0.0),
+        Vec4::new(forward.x, forward.y, forward.z, 0.0),
+        Vec4::new(0.0, 0.0, 0.0, 1.0),
+    );
+
+    let yaw_rot = Mat4::rotation_y(yaw_angle);
+    let local_basis = basis * yaw_rot;
+
+    SurfaceInstance {
+        local_pos,
+        local_normal: up,
+        local_basis,
+        base_scale,
+    }
+}
+
+/// Genera una distribución uniforme y determinista de instancias asentadas sobre la corteza superior
+/// de un planeta toroidal (dona), orientadas con la normal de la superficie y con base ortonormal estable.
+pub fn generate_torus_surface_distribution(
+    seed: u32,
+    count: usize,
+    planet_mesh: &Mesh,
+    planet_scale: f32,
+    base_scale: f32,
+    embedding: f32,
+) -> Vec<SurfaceInstance> {
+    if count == 0 || planet_mesh.vertices.is_empty() {
+        return Vec::new();
+    }
+
+    // Filtrar vértices del lomo superior exterior de la dona (y > 0.04)
+    let candidates: Vec<&crate::mesh::Vertex> = planet_mesh
+        .vertices
+        .iter()
+        .filter(|v| v.position.y > 0.04)
+        .collect();
+
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let seed_offset = hash_f32(0x85EB_CA6B, seed) * std::f32::consts::TAU;
+    let mut instances = Vec::with_capacity(count);
+
+    for i in 0..count {
+        let target_angle = seed_offset + (i as f32 * std::f32::consts::TAU / (count as f32));
+        // Encontrar el vértice candidato más cercano al ángulo azimutal objetivo
+        let mut best_vertex = candidates[0];
+        let mut best_diff = f32::MAX;
+
+        for &v in &candidates {
+            let angle = v.position.z.atan2(v.position.x);
+            let mut diff = (angle - target_angle).rem_euclid(std::f32::consts::TAU);
+            if diff > std::f32::consts::PI {
+                diff = std::f32::consts::TAU - diff;
+            }
+            if diff < best_diff {
+                best_diff = diff;
+                best_vertex = v;
+            }
+        }
+
+        let normal = if best_vertex.normal.length_squared() > 1e-4 {
+            best_vertex.normal.normalize()
+        } else {
+            Vec3::new(0.0, 1.0, 0.0)
+        };
+
+        let local_pos = best_vertex.position * planet_scale - normal * embedding;
+        let yaw_angle = hash_f32(i as u32, seed) * std::f32::consts::TAU;
+
+        instances.push(create_surface_instance(
+            local_pos, normal, base_scale, yaw_angle,
+        ));
     }
 
     instances

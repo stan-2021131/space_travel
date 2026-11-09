@@ -42,6 +42,19 @@ impl Color {
     pub fn to_u32(self) -> u32 {
         u32::from_le_bytes([self.r, self.g, self.b, self.a])
     }
+
+    /// Mezcla alfa estándar: color_salida = src * alpha + dst * (1 - alpha).
+    #[inline]
+    pub fn blend(dst: Self, src: Self) -> Self {
+        let a = src.a as u32;
+        let inv_a = 255 - a;
+        Self {
+            r: ((src.r as u32 * a + dst.r as u32 * inv_a) / 255) as u8,
+            g: ((src.g as u32 * a + dst.g as u32 * inv_a) / 255) as u8,
+            b: ((src.b as u32 * a + dst.b as u32 * inv_a) / 255) as u8,
+            a: 255,
+        }
+    }
 }
 
 /// Framebuffer de color administrado íntegramente por el software renderer en CPU.
@@ -251,6 +264,25 @@ impl<'a> RenderBand<'a> {
             let local_y = y - self.y_start;
             self.pixels[local_y * self.width + x] = color;
         }
+    }
+
+    #[inline]
+    pub fn blend_pixel(&mut self, x: usize, y: usize, color: Color) {
+        if x < self.width && y >= self.y_start && y < self.y_end {
+            let local_y = y - self.y_start;
+            let idx = local_y * self.width + x;
+            self.pixels[idx] = Color::blend(self.pixels[idx], color);
+        }
+    }
+
+    #[inline]
+    pub fn test_depth_only(&self, x: usize, y: usize, depth: f32) -> bool {
+        if x < self.width && y >= self.y_start && y < self.y_end {
+            let local_y = y - self.y_start;
+            let idx = local_y * self.width + x;
+            return depth < self.depth[idx];
+        }
+        false
     }
 
     #[inline]

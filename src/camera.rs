@@ -58,6 +58,46 @@ impl Camera {
         self.up = ship_up.normalize();
     }
 
+    /// Actualiza la cámara para el modo panorámico centrado en un planeta.
+    ///
+    /// - Fija el objetivo de visión (`target`) en el centro exacto del planeta para que quede en el centro de la pantalla.
+    /// - Aleja suavemente la posición (`eye`) a una distancia panorámica óptima que enmarca el planeta y
+    ///   permite apreciar el vuelo de la nave orbitando a su alrededor.
+    pub fn update_panoramic_planet_view(
+        &mut self,
+        planet_center: Vec3,
+        planet_radius: f32,
+        config: &CameraConfig,
+        dt: f32,
+    ) {
+        let view_distance = (planet_radius * 3.2).max(42.0);
+        let elevation = (planet_radius * 0.75).max(14.0);
+
+        // Mantiene la dirección horizontal relativa desde el planeta hacia la cámara
+        let mut dir = self.eye - planet_center;
+        dir.y = 0.0;
+        let dir = if dir.length_squared() > 1e-4 {
+            dir.normalize()
+        } else {
+            Vec3::new(0.0, 0.0, 1.0)
+        };
+
+        let ideal_eye = planet_center + dir * view_distance + Vec3::new(0.0, elevation, 0.0);
+        let ideal_target = planet_center;
+
+        let pos_blend = 1.0 - (-config.position_smoothing * 0.75 * dt).exp();
+        let rot_blend = 1.0 - (-config.rotation_smoothing * 0.75 * dt).exp();
+
+        self.eye += (ideal_eye - self.eye) * pos_blend;
+        self.target += (ideal_target - self.target) * rot_blend;
+
+        let target_up = Vec3::up();
+        self.up += (target_up - self.up) * rot_blend;
+        if self.up.length_squared() > 1e-4 {
+            self.up = self.up.normalize();
+        }
+    }
+
     /// Calcula la matriz de vista (View Matrix) mediante Look-At.
     pub fn view_matrix(&self) -> Mat4 {
         Mat4::look_at(self.eye, self.target, self.up)

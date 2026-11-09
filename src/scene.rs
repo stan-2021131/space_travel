@@ -6,7 +6,10 @@ use std::sync::Arc;
 pub mod debris_ring;
 pub mod surface;
 pub use debris_ring::{DebrisInstance, DebrisRing};
-pub use surface::{SurfaceGroup, SurfaceInstance, calculate_surface_embedding};
+pub use surface::{
+    SurfaceGroup, SurfaceInstance, calculate_surface_embedding, create_surface_instance,
+    generate_torus_surface_distribution,
+};
 
 /// Representa un cuerpo celeste (Sol o Planeta) en la simulación orbital.
 #[derive(Debug, Clone)]
@@ -26,6 +29,11 @@ pub struct CelestialBody {
     pub shader_type: String,
     pub surface_groups: Vec<SurfaceGroup>,
     pub debris_rings: Vec<DebrisRing>,
+    pub gravity_strength: f32,
+    pub gravity_radius: f32,
+    pub visible_gravity: bool,
+    pub axial_tilt_rad: f32,
+    pub gravity_mesh: Option<Arc<Mesh>>,
 }
 
 impl CelestialBody {
@@ -46,15 +54,24 @@ impl CelestialBody {
         }
     }
 
-    /// Retorna la matriz de modelo completa para colocar el cuerpo en el mundo: $M = T \cdot R_y \cdot S$.
+    /// Retorna la matriz de modelo completa para colocar el cuerpo en el mundo: $M = T \cdot R \cdot S$.
     pub fn model_matrix(&self) -> Mat4 {
         Mat4::from_translation(self.position)
-            * Mat4::rotation_y(self.rotation_rad)
+            * self.rotation_matrix()
             * Mat4::uniform_scaling(self.scale)
     }
 
     /// Retorna la matriz de rotación pura para transformar normales con escala uniforme.
     pub fn rotation_matrix(&self) -> Mat4 {
-        Mat4::rotation_y(self.rotation_rad)
+        if self.axial_tilt_rad.abs() > 1e-4 {
+            Mat4::rotation_x(self.axial_tilt_rad) * Mat4::rotation_y(self.rotation_rad)
+        } else {
+            Mat4::rotation_y(self.rotation_rad)
+        }
+    }
+
+    /// Retorna la matriz de modelo para la esfera de campo gravitatorio (centrada en el cuerpo, escalada a gravity_radius).
+    pub fn gravity_field_model_matrix(&self) -> Mat4 {
+        Mat4::from_translation(self.position) * Mat4::uniform_scaling(self.gravity_radius)
     }
 }

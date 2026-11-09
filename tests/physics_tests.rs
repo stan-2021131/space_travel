@@ -144,6 +144,11 @@ fn test_orbital_mechanics_deterministic() {
         shader_type: "textured_diffuse".to_string(),
         surface_groups: Vec::new(),
         debris_rings: Vec::new(),
+        gravity_strength: 0.0,
+        gravity_radius: 14.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
     };
 
     // t = 0: (R, 0, 0)
@@ -184,6 +189,11 @@ fn test_celestial_body_model_and_rotation_matrices() {
         shader_type: "textured_diffuse".to_string(),
         surface_groups: Vec::new(),
         debris_rings: Vec::new(),
+        gravity_strength: 0.0,
+        gravity_radius: 14.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
     };
 
     // Actualizar a t = 10s (rotación axial de 90°: TAU / 4)

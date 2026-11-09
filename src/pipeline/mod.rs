@@ -8,7 +8,9 @@ use crate::math::Mat4;
 use crate::mesh::Mesh;
 use crate::stats::FrameStats;
 use clipping::{ClipTriangle, ClipVertex, ClippedTriangles, clip_triangle_near_plane};
-pub use rasterizer::{VertexOut, is_front_facing, rasterize_triangle, rasterize_triangle_band};
+pub use rasterizer::{
+    BlendMode, VertexOut, is_front_facing, rasterize_triangle, rasterize_triangle_band,
+};
 pub use shaders as shader;
 pub use shaders::*;
 
@@ -31,6 +33,31 @@ pub struct RenderContext<'a, S: FragmentShader> {
     pub view_proj_matrix: &'a Mat4,
     pub material: &'a Material,
     pub shader: &'a S,
+    pub blend_mode: BlendMode,
+}
+
+impl<'a, S: FragmentShader> RenderContext<'a, S> {
+    pub fn new(
+        model_matrix: &'a Mat4,
+        rotation_matrix: &'a Mat4,
+        view_proj_matrix: &'a Mat4,
+        material: &'a Material,
+        shader: &'a S,
+    ) -> Self {
+        Self {
+            model_matrix,
+            rotation_matrix,
+            view_proj_matrix,
+            material,
+            shader,
+            blend_mode: BlendMode::Opaque,
+        }
+    }
+
+    pub fn with_blend_mode(mut self, blend_mode: BlendMode) -> Self {
+        self.blend_mode = blend_mode;
+        self
+    }
 }
 
 /// Objetivos de renderizado en CPU (framebuffer y depth buffer).
@@ -147,7 +174,16 @@ impl SoftwareRenderer {
                     pixels: target.framebuffer.as_mut_slice(),
                     depth: target.depth_buffer.as_mut_slice(),
                 };
-                rasterize_triangle_band(vo0, vo1, vo2, &mut band, ctx.material, ctx.shader, stats);
+                rasterize_triangle_band(
+                    vo0,
+                    vo1,
+                    vo2,
+                    &mut band,
+                    ctx.material,
+                    ctx.shader,
+                    ctx.blend_mode,
+                    stats,
+                );
             }
         } else {
             // Rasterización paralela por franjas horizontales disjuntas (Scanline Slicing)
@@ -160,6 +196,7 @@ impl SoftwareRenderer {
             let triangles = &self.triangles_cache;
             let material = ctx.material;
             let shader = ctx.shader;
+            let blend_mode = ctx.blend_mode;
 
             let thread_stats: Vec<FrameStats> = std::thread::scope(|s| {
                 let mut handles = Vec::with_capacity(bands.len());
@@ -174,6 +211,7 @@ impl SoftwareRenderer {
                                 &mut band,
                                 material,
                                 shader,
+                                blend_mode,
                                 &mut local_stats,
                             );
                         }

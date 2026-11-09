@@ -3,6 +3,7 @@ use space_travel::math::Vec3;
 use space_travel::mesh::{AABB, Mesh};
 use space_travel::scene::surface::{
     calculate_fade_factor, calculate_surface_embedding, generate_spherical_distribution,
+    generate_torus_surface_distribution,
 };
 use std::path::Path;
 
@@ -265,5 +266,188 @@ fn test_automatic_surface_embedding() {
     assert!(
         embedding_mountain > embedding_narrow * 2.0,
         "El enraizamiento debe ser proporcional a la curvatura de la base"
+    );
+}
+
+#[test]
+fn test_load_donut_and_sweet_objects_assets() {
+    // 1. Carga del modelo del planeta dona y su textura difusa
+    let donut_mesh = Mesh::load_from_obj(Path::new("assets/models/donut/donut_8.obj"))
+        .expect("El modelo donut_8.obj debe cargar correctamente");
+    assert!(
+        !donut_mesh.vertices.is_empty(),
+        "El modelo de la dona debe contener vértices"
+    );
+    assert!(
+        donut_mesh.material.texture.is_some(),
+        "El material de la dona debe tener cargada su textura donut_8.png"
+    );
+
+    // 2. Carga de los 4 modelos de dulces de superficie
+    let cake = Mesh::load_from_obj(Path::new("assets/models/objects/cake/cake_slice.obj"))
+        .expect("cake_slice.obj debe cargar");
+    let cookie = Mesh::load_from_obj(Path::new("assets/models/objects/cookie/cookie.obj"))
+        .expect("cookie.obj debe cargar");
+    let ice_cream = Mesh::load_from_obj(Path::new(
+        "assets/models/objects/ice_cream/ice_cream_cone.obj",
+    ))
+    .expect("ice_cream_cone.obj debe cargar");
+    let lollipop = Mesh::load_from_obj(Path::new("assets/models/objects/lollipop/lollipop.obj"))
+        .expect("lollipop.obj debe cargar");
+
+    assert!(!cake.vertices.is_empty());
+    assert!(!cookie.vertices.is_empty());
+    assert!(!ice_cream.vertices.is_empty());
+    assert!(!lollipop.vertices.is_empty());
+
+    // Verificación de normales válidas y AABB positiva
+    assert!(cake.aabb.max_extent() > 0.0);
+    assert!(cookie.aabb.max_extent() > 0.0);
+    assert!(ice_cream.aabb.max_extent() > 0.0);
+    assert!(lollipop.aabb.max_extent() > 0.0);
+}
+
+#[test]
+fn test_donut_torus_surface_distribution() {
+    let donut_mesh = Mesh::load_from_obj(Path::new("assets/models/donut/donut_8.obj"))
+        .expect("Carga de donut_8.obj");
+    let planet_scale = 20.0 / donut_mesh.geometric_radius();
+    let base_scale = 20.0;
+    let embedding = 0.5;
+    let seed = 67;
+    let count = 4;
+
+    let instances = generate_torus_surface_distribution(
+        seed,
+        count,
+        &donut_mesh,
+        planet_scale,
+        base_scale,
+        embedding,
+    );
+
+    assert_eq!(instances.len(), count);
+    for inst in &instances {
+        // Todas las instancias en el lomo superior de la dona deben tener normal con componente Y positiva
+        assert!(
+            inst.local_normal.y > 0.0,
+            "Normal debe apuntar hacia arriba/afuera: {}",
+            inst.local_normal.y
+        );
+        assert!(
+            (inst.local_normal.length() - 1.0).abs() < 1e-4,
+            "Normal debe ser unitaria"
+        );
+        // La posición local en Y debe ser positiva (sobre la cara visible de la dona)
+        assert!(
+            inst.local_pos.y > 0.0,
+            "Posición local Y debe ser positiva sobre la corteza superior: {}",
+            inst.local_pos.y
+        );
+    }
+
+    // Verificar que las instancias cubren el anillo completo y no están agrupadas en un solo punto
+    let mut min_x = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut min_z = f32::MAX;
+    let mut max_z = f32::MIN;
+    for inst in &instances {
+        min_x = min_x.min(inst.local_pos.x);
+        max_x = max_x.max(inst.local_pos.x);
+        min_z = min_z.min(inst.local_pos.z);
+        max_z = max_z.max(inst.local_pos.z);
+    }
+    assert!(
+        (max_x - min_x) > 20.0,
+        "Las instancias deben expandirse en el eje X del toroide: span={}",
+        max_x - min_x
+    );
+    assert!(
+        (max_z - min_z) > 20.0,
+        "Las instancias deben expandirse en el eje Z del toroide: span={}",
+        max_z - min_z
+    );
+
+    // Determinismo con la misma semilla
+    let instances_same_seed = generate_torus_surface_distribution(
+        seed,
+        count,
+        &donut_mesh,
+        planet_scale,
+        base_scale,
+        embedding,
+    );
+    for i in 0..count {
+        assert!(
+            (instances[i].local_pos - instances_same_seed[i].local_pos).length() < 1e-5,
+            "Misma semilla debe generar posiciones idénticas"
+        );
+    }
+}
+
+#[test]
+fn test_toml_donut_planet_parsing() {
+    let config = AppConfig::load_from_file(Path::new("config/solar_system.toml"))
+        .expect("El archivo toml debe ser válido");
+
+    let dona = config
+        .planets
+        .iter()
+        .find(|p| p.id == "dona")
+        .expect("Debe existir planeta dona en toml");
+
+    assert_eq!(dona.model_path, "assets/models/donut/donut_8.obj");
+    assert!((dona.radius - 45.0).abs() < 1e-4);
+    assert!((dona.orbital_radius - 320.0).abs() < 1e-4);
+    assert!((dona.axial_tilt_deg - 30.0).abs() < 1e-4);
+    assert!(dona.visible_gravity, "Debe tener campo de fuerza visible");
+    assert_eq!(
+        dona.surface_objects.len(),
+        4,
+        "Debe tener los 4 objetos dulces de superficie configurados"
+    );
+
+    assert_eq!(dona.surface_objects[0].name, "Pastel");
+    assert_eq!(dona.surface_objects[1].name, "Galleta");
+    assert_eq!(dona.surface_objects[2].name, "Helado");
+    assert_eq!(dona.surface_objects[3].name, "Paleta");
+}
+
+#[test]
+fn test_surface_groups_seed_divergence() {
+    let donut_mesh = Mesh::load_from_obj(Path::new("assets/models/donut/donut_8.obj"))
+        .expect("Carga de donut_8.obj");
+    let planet_scale = 20.0 / donut_mesh.geometric_radius();
+    let base_scale = 20.0;
+    let embedding = 0.5;
+    let base_seed: u32 = 67;
+    let count = 4;
+
+    let group_0_seed = base_seed.wrapping_add((0u32).wrapping_mul(1013904223));
+    let group_1_seed = base_seed.wrapping_add((1u32).wrapping_mul(1013904223));
+
+    let inst_0 = generate_torus_surface_distribution(
+        group_0_seed,
+        count,
+        &donut_mesh,
+        planet_scale,
+        base_scale,
+        embedding,
+    );
+    let inst_1 = generate_torus_surface_distribution(
+        group_1_seed,
+        count,
+        &donut_mesh,
+        planet_scale,
+        base_scale,
+        embedding,
+    );
+
+    // Verificar que los objetos del grupo 0 y grupo 1 no caen en las mismas posiciones
+    let dist = (inst_0[0].local_pos - inst_1[0].local_pos).length();
+    assert!(
+        dist > 1.0,
+        "Distintos grupos de superficie deben ocupar posiciones separadas en la dona: dist={}",
+        dist
     );
 }

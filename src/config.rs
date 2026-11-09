@@ -100,6 +100,18 @@ pub struct SunConfig {
     pub collision_margin: f32,
     pub rotation_period: f32,
     pub shader: String,
+    #[serde(default)]
+    pub gravity_strength: f32,
+    #[serde(default)]
+    pub gravity_radius: Option<f32>,
+    #[serde(default)]
+    pub visible_gravity: bool,
+}
+
+impl SunConfig {
+    pub fn effective_gravity_radius(&self) -> f32 {
+        self.gravity_radius.unwrap_or(self.radius + 4.0)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -169,9 +181,23 @@ pub struct PlanetConfig {
     pub collision_margin: f32,
     pub shader: String,
     #[serde(default)]
+    pub gravity_strength: f32,
+    #[serde(default)]
+    pub gravity_radius: Option<f32>,
+    #[serde(default)]
+    pub visible_gravity: bool,
+    #[serde(default)]
+    pub axial_tilt_deg: f32,
+    #[serde(default)]
     pub surface_objects: Vec<SurfaceObjectConfig>,
     #[serde(default)]
     pub debris_rings: Vec<DebrisRingConfig>,
+}
+
+impl PlanetConfig {
+    pub fn effective_gravity_radius(&self) -> f32 {
+        self.gravity_radius.unwrap_or(self.radius + 4.0)
+    }
 }
 
 fn default_mesh_type() -> String {
@@ -277,13 +303,48 @@ impl AppConfig {
             return Err(format!("[{}] Suavizado de cámara debe ser mayor a 0", p));
         }
 
+        if !self.sun.gravity_strength.is_finite() || self.sun.gravity_strength < 0.0 {
+            return Err(format!(
+                "[{}] Intensidad de gravedad del sol debe ser no negativa y finita",
+                p
+            ));
+        }
+        if !self.sun.effective_gravity_radius().is_finite()
+            || self.sun.effective_gravity_radius() < self.sun.radius
+        {
+            return Err(format!(
+                "[{}] Radio de gravedad del sol debe ser mayor o igual a su radio físico",
+                p
+            ));
+        }
+
         let mut ids = HashSet::new();
         ids.insert(self.sun.id.as_str());
 
         for planet in &self.planets {
-            if planet.radius <= 0.0 {
+            if !planet.radius.is_finite() || planet.radius <= 0.0 {
                 return Err(format!(
-                    "[{}] Radio de planeta '{}' debe ser positivo",
+                    "[{}] Radio de planeta '{}' debe ser un número finito positivo",
+                    p, planet.id
+                ));
+            }
+            if !planet.axial_tilt_deg.is_finite() {
+                return Err(format!(
+                    "[{}] Inclinación axial de planeta '{}' debe ser un número finito",
+                    p, planet.id
+                ));
+            }
+            if !planet.gravity_strength.is_finite() || planet.gravity_strength < 0.0 {
+                return Err(format!(
+                    "[{}] Intensidad de gravedad de planeta '{}' debe ser no negativa y finita",
+                    p, planet.id
+                ));
+            }
+            if !planet.effective_gravity_radius().is_finite()
+                || planet.effective_gravity_radius() < planet.radius
+            {
+                return Err(format!(
+                    "[{}] Radio de gravedad de planeta '{}' debe ser mayor o igual a su radio físico",
                     p, planet.id
                 ));
             }
