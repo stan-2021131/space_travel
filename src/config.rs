@@ -64,6 +64,35 @@ fn default_seed() -> u32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ThrusterFlameConfig {
+    pub position: [f32; 3],
+    pub rotation_deg: [f32; 3],
+    pub radius: f32,
+    pub length: f32,
+    pub animation_speed: f32,
+    pub idle_intensity: f32,
+    pub active_intensity: f32,
+}
+
+impl ThrusterFlameConfig {
+    fn is_valid(&self) -> bool {
+        self.position.iter().all(|value| value.is_finite())
+            && self.rotation_deg.iter().all(|value| value.is_finite())
+            && self.radius.is_finite()
+            && self.radius > 0.0
+            && self.length.is_finite()
+            && self.length > 0.0
+            && self.animation_speed.is_finite()
+            && self.animation_speed > 0.0
+            && self.idle_intensity.is_finite()
+            && (0.0..=1.0).contains(&self.idle_intensity)
+            && self.active_intensity.is_finite()
+            && (0.0..=1.0).contains(&self.active_intensity)
+            && self.active_intensity >= self.idle_intensity
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ShipConfig {
     pub model_path: String,
     pub target_length_wu: f32,
@@ -78,6 +107,8 @@ pub struct ShipConfig {
     pub pitch_speed: f32,
     pub roll_speed: f32,
     pub collision_radius: f32,
+    #[serde(default)]
+    pub thruster_flames: Vec<ThrusterFlameConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -200,6 +231,8 @@ pub struct PlanetConfig {
     pub debris_rings: Vec<DebrisRingConfig>,
     #[serde(default)]
     pub components: Vec<PlanetComponentConfig>,
+    #[serde(default)]
+    pub thruster_flames: Vec<ThrusterFlameConfig>,
 }
 
 impl PlanetConfig {
@@ -264,6 +297,17 @@ impl AppConfig {
         if self.ship.max_speed <= 0.0 || self.ship.acceleration <= 0.0 {
             return Err(format!(
                 "[{}] Parámetros de nave (max_speed, acceleration) deben ser positivos",
+                p
+            ));
+        }
+        if self
+            .ship
+            .thruster_flames
+            .iter()
+            .any(|flame| !flame.is_valid())
+        {
+            return Err(format!(
+                "[{}] Configuración de llamas de la nave inválida",
                 p
             ));
         }
@@ -441,6 +485,12 @@ impl AppConfig {
                         p, planet.id
                     ));
                 }
+            }
+            if planet.thruster_flames.iter().any(|flame| !flame.is_valid()) {
+                return Err(format!(
+                    "[{}] Configuración de llamas inválida en planeta '{}'",
+                    p, planet.id
+                ));
             }
         }
 

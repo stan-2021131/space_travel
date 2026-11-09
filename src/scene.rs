@@ -34,6 +34,58 @@ impl CelestialComponent {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ThrusterFlame {
+    pub position: Vec3,
+    pub rotation: Mat4,
+    pub radius: f32,
+    pub length: f32,
+    pub animation_speed: f32,
+    pub idle_intensity: f32,
+    pub active_intensity: f32,
+}
+
+impl ThrusterFlame {
+    pub fn from_degrees(
+        position: [f32; 3],
+        rotation_deg: [f32; 3],
+        radius: f32,
+        length: f32,
+        animation_speed: f32,
+        idle_intensity: f32,
+        active_intensity: f32,
+    ) -> Self {
+        Self {
+            position: Vec3::new(position[0], position[1], position[2]),
+            rotation: Mat4::rotation_euler(
+                rotation_deg[1].to_radians(),
+                rotation_deg[0].to_radians(),
+                rotation_deg[2].to_radians(),
+            ),
+            radius,
+            length,
+            animation_speed,
+            idle_intensity,
+            active_intensity,
+        }
+    }
+
+    pub fn local_model_matrix(&self, intensity: f32, flicker: f32) -> Mat4 {
+        let intensity = intensity.clamp(0.05, 1.0);
+        Mat4::from_translation(self.position)
+            * self.rotation
+            * Mat4::scaling(
+                self.radius * (0.75 + intensity * 0.25),
+                self.radius * (0.75 + intensity * 0.25),
+                self.length * intensity * flicker,
+            )
+    }
+
+    pub fn origin_extent(&self) -> f32 {
+        self.position.length() + (self.radius * self.radius + self.length * self.length).sqrt()
+    }
+}
+
 /// Representa un cuerpo celeste (Sol o Planeta) en la simulación orbital.
 #[derive(Debug, Clone)]
 pub struct CelestialBody {
@@ -53,6 +105,7 @@ pub struct CelestialBody {
     pub surface_groups: Vec<SurfaceGroup>,
     pub debris_rings: Vec<DebrisRing>,
     pub components: Vec<CelestialComponent>,
+    pub thruster_flames: Vec<ThrusterFlame>,
     pub gravity_strength: f32,
     pub gravity_radius: f32,
     pub visible_gravity: bool,
@@ -104,6 +157,14 @@ impl CelestialBody {
         self.components
             .iter()
             .map(|component| component.origin_radius * self.scale)
+            .fold(self.radius, f32::max)
+    }
+
+    /// Radio visual requerido para no descartar llamas que sobresalen del cuerpo sólido.
+    pub fn thruster_flame_radius(&self) -> f32 {
+        self.thruster_flames
+            .iter()
+            .map(|flame| flame.origin_extent() * self.scale)
             .fold(self.radius, f32::max)
     }
 }

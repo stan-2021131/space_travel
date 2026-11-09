@@ -1,6 +1,7 @@
 use space_travel::config::{PlanetConfig, ShipConfig};
 use space_travel::math::Vec3;
-use space_travel::physics::ShipState;
+use space_travel::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
+use std::path::Path;
 
 fn dummy_ship_config() -> ShipConfig {
     ShipConfig {
@@ -17,6 +18,7 @@ fn dummy_ship_config() -> ShipConfig {
         pitch_speed: 1.5,
         roll_speed: 2.0,
         collision_radius: 0.6,
+        thruster_flames: Vec::new(),
     }
 }
 
@@ -166,6 +168,7 @@ fn test_planet_effective_gravity_radius_default_and_explicit() {
         surface_objects: Vec::new(),
         debris_rings: Vec::new(),
         components: Vec::new(),
+        thruster_flames: Vec::new(),
     };
     assert_eq!(
         p_default.effective_gravity_radius(),
@@ -182,4 +185,49 @@ fn test_planet_effective_gravity_radius_default_and_explicit() {
         35.0,
         "Si es explícito debe respetar el valor especificado"
     );
+}
+
+#[test]
+fn test_ship_can_escape_donut_surface_with_forward_thrust() {
+    let config =
+        space_travel::config::AppConfig::load_from_file(Path::new("config/solar_system.toml"))
+            .unwrap();
+    let donut = config
+        .planets
+        .iter()
+        .find(|planet| planet.id == "dona")
+        .unwrap();
+    assert_eq!(donut.gravity_strength, 13.0);
+
+    let mut ship = ShipState::new(&config.ship);
+    let obstacle_radius = donut.radius + donut.collision_margin;
+    let contact_distance = obstacle_radius + ship.collision_radius;
+    ship.position = Vec3::new(contact_distance, 0.0, 0.0);
+    ship.velocity = Vec3::zero();
+    ship.yaw_deg = 90.0;
+    let input = ShipInput {
+        throttle_forward: true,
+        ..Default::default()
+    };
+    let dt = 1.0 / 60.0;
+
+    for _ in 0..720 {
+        ship.update(&input, &config.ship, dt);
+        ship.apply_gravitational_attraction(
+            Vec3::zero(),
+            donut.radius,
+            donut.effective_gravity_radius(),
+            donut.gravity_strength,
+            dt,
+        );
+        resolve_sphere_collision(
+            &mut ship.position,
+            &mut ship.velocity,
+            ship.collision_radius,
+            CollisionSphere::new(Vec3::zero(), obstacle_radius),
+        );
+    }
+
+    assert!(ship.position.length() > contact_distance + 5.0);
+    assert!(ship.velocity.length().is_finite());
 }
