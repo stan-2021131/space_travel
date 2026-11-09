@@ -8,7 +8,7 @@ Proyecto final del curso de **Gráficas por Computadora (2026)**. Consiste en un
 
 El proyecto implementa un sistema solar interactivo tridimensional, continuo, navegable y gobernado por configuración declarativa:
 - **Cuerpo Central (Sol)**: Malla esférica geodésica ubicada en el origen $(0, 0, 0)$ renderizada con shaders CPU (emisivo o plasma animado) que simulan autoiluminación y dinámica térmica solar.
-- **Planetas y Cuerpos Celestes**: Cuerpos que orbitan en el plano XZ y rotan sobre su eje Y según periodos físicos parametrizados, con texturas PNG o shaders procedurales en CPU.
+- **Planetas y Cuerpos Celestes**: Cuerpos que orbitan en el plano XZ y rotan sobre su eje Y según periodos físicos parametrizados, con texturas PNG o shaders procedurales en CPU. El planeta destruido incorpora un anillo inclinado de escombros con revolución y giro individual independientes.
 - **Nave Espacial y Navegación**: Modelo 3D centrado y escalado a unidades de mundo (WU), pilotable en 6 grados de libertad angulares con aceleración progresiva, frenado e inercia arcade basada estrictamente en tiempo ($dt$).
 - **Cámara de Persecución Suave**: Cámara en tercera persona posicionada a una distancia fija detrás y arriba de la nave, orientada hacia un punto adelantado de mira y amortiguada exponencialmente.
 - **Detección y Respuesta a Colisiones**: Resolución analítica inelástica contra las esferas de colisión de los astros, cancelando la velocidad entrante, preservando la componente tangencial y permitiendo el deslizamiento suave sobre la superficie.
@@ -121,6 +121,14 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
   - **Aparición suave (*smoothstep*)**: Factor cúbico $t^2(3-2t)$ que escala suavemente el objeto al aproximarse evitando *pop-in*.
   - **Descarte de horizonte**: Omisión de geometrías situadas en la cara posterior oculta respecto al observador.
 
+### 8.1 Anillo orbital de escombros (`src/scene/debris_ring.rs`)
+
+- Las dos mallas de escombro se cargan una sola vez y se reutilizan mediante instancias con transformación propia.
+- La distribución es determinista a partir de `simulation.seed`: alterna variantes y modifica ángulo, radio, altura y escala dentro de límites configurables.
+- El centro del anillo acompaña la órbita del planeta destruido, pero su revolución utiliza un periodo independiente de `42 s`; cada pieza rota además con velocidad y eje propios calculados mediante el tiempo de simulación.
+- El anillo y cada escombro participan en frustum culling, métricas de triángulos y colisiones de la nave y los enemigos.
+- Todos sus parámetros se encuentran en `[[planets.debris_rings]]` dentro de `config/solar_system.toml`.
+
 ---
 
 ## 9. Dependencias Utilizadas
@@ -157,7 +165,7 @@ cargo fmt --check
 # Análisis estático sin advertencias
 cargo clippy --all-targets
 
-# Suite completa de pruebas automatizadas (117 pruebas deterministas en 18 suites)
+# Suite completa de pruebas automatizadas deterministas
 cargo test
 ```
 
@@ -246,7 +254,7 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 13. Pruebas Automatizadas
 
-El proyecto cuenta con 117 pruebas automatizadas deterministas divididas modularmente en 18 test suites en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con una amplia batería de pruebas automatizadas deterministas divididas modularmente en 19 test suites en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
 - **Pipeline de Renderizado y Paralelización** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos de posición, normal, tangente y UV), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, partición horizontal de pantalla en franjas disjuntas (*Scanline Slicing*), soporte para modo opaco y mezcla alfa (*Alpha Blending*), y verificación de equivalencia determinista idéntica píxel por píxel entre renderizado monohilo y multihilo en CPU.
 - **Descarte de Visión / Frustum Culling** (`frustum_tests.rs`): Extracción analítica de los 6 planos del frustum desde la matriz de Vista-Proyección ($VP = P \cdot V$) mediante Gribb-Hartmann, normalización de planos, distancias signadas, intersección analítica con esferas envolventes, descarte estricto en los 6 ejes y acumulación de métricas diagnósticas.
@@ -257,6 +265,7 @@ El proyecto cuenta con 117 pruebas automatizadas deterministas divididas modular
 - **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista, shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`), shader de nave espacial (`ShipShader`) y shader alienígena animado (`AlienEnergyShader`) con borde Fresnel.
 - **Shader de Campo de Fuerza / Atmósfera Semitransparente** (`force_field_shader_tests.rs`): Validación del shader de campo de fuerza en CPU con borde Fresnel exponencial en siluetas, mezcla alfa de píxeles (`Color::blend`), pase de profundidad pura sin escritura en el Z-buffer (`RenderBand::test_depth_only`) y consistencia de atributos de cámara y tiempo.
 - **Objetos de Superficie y Distribución Esférica/Toroidal** (`surface_tests.rs`): Distribución esférica uniforme de Fibonacci y distribución azimutal sobre corteza toroidal superior con semilla determinista, ortonormalidad estricta de la base local y alineación perpendicular a la normal radial esférica o normal del toroide, descarte por distancia $O(1)$ con transición cúbica suave (*smoothstep*), enraizamiento geométrico universal automático por sagita esférica (`calculate_surface_embedding`) para evitar flotación sobre terreno curvo/facetas, carga íntegra y validación geométrica de los 5 modelos propios (montaña, rebanada de pastel, galleta, cono de helado y paleta), divergencia determinista de semillas entre grupos y parseo declarativo en TOML.
+- **Anillo de Escombros Orbitales** (`debris_ring_tests.rs`): Distribución determinista y acotada de variantes, repetición exacta de la revolución tras su periodo, seguimiento de la traslación del planeta, giro individual independiente y carga íntegra de albedo y normal map para el planeta destruido y ambos escombros.
 - **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
 - **Atracción Gravitatoria Planetaria** (`gravity_tests.rs`): Validación de la atracción gravitatoria newtoniana en `ShipState::apply_gravitational_attraction`, decaimiento cúbico suave (*smoothstep*) en los límites de la esfera de influencia, aceleración cero fuera del radio o con fuerza nula, protección contra singularidades en la superficie del astro y cálculo de radio efectivo por defecto vs. explícito en TOML.
 - **Cámara y Modos de Persecución** (`camera_tests.rs` y `local_flight_tests.rs`): Suavizado exponencial de traslación y orientación en tercera persona, modo panorámico centrado en planetas con encuadre orbital óptimo, cálculo de distancias de compromiso y retención de controles de vuelo libre durante la aproximación.
@@ -289,7 +298,9 @@ El proyecto cuenta con 117 pruebas automatizadas deterministas divididas modular
   - Implementación del sistema de Frustum Culling analítico mediante extracción de planos Gribb-Hartmann y descarte esférico multinivel (`src/camera.rs`).
   - Implementación del modo de control local orbital con vista panorámica y retículas HUD dedicadas (`src/camera.rs`, `src/hud.rs`, `src/app.rs`).
   - Implementación del sistema de paralelización de renderizado en CPU sin dependencias externas mediante partición horizontal de pantalla en franjas contiguas disjuntas (*Scanline Slicing*) con `std::thread::scope` en rasterización y `SkyShader`.
-  - Batería de 117 pruebas deterministas modulares (18 suites) y documentación técnica sincronizada.
+  - Batería de pruebas deterministas modulares (19 suites) y documentación técnica sincronizada.
+  - Integración del planeta destruido y su anillo orbital determinista con rotación independiente, colisiones y descarte por frustum.
+  - Integración del planeta dona gigante inclinado 30° con campo de fuerza visible y 32 objetos dulces en corteza toroidal.
 
 ---
 
@@ -299,8 +310,8 @@ El proyecto cuenta con 117 pruebas automatizadas deterministas divididas modular
 |---|---|:---:|:---:|---|
 | **Base Habilitante** | Renderer 3D propio en CPU (Sin funciones 3D de Raylib) | Requisito | 0 | Implementado y Validado |
 | **Base Habilitante** | Carga y dibujo con MVP, Z-Buffer y Shader en CPU | Requisito | 0 | Implementado y Validado |
-| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **30** | **Reclamado**: 3 planetas con órbita, rotación sobre eje y exploración cercana: Rocoso (90 WU), Asteroide Procedural (160 WU) y Planeta Dona con campo de fuerza (260 WU) |
-| **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **20** | **Reclamado**: 4 modelos propios de superficie: Montaña (`Mountain_1_LOD_High.obj`), Pastel (`cake_slice.obj`), Galleta (`cookie.obj`), Helado (`ice_cream_cone.obj`) y Paleta (`lollipop.obj`) |
+| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **40** | **Reclamado**: 4 planetas con órbita, rotación sobre eje y exploración cercana: Rocoso (85 WU), Destruido con anillos de escombros (145 WU), Asteroide Procedural (195 WU) y Planeta Dona gigante (320 WU) con campo de fuerza |
+| **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **20** | **Reclamado**: 5 modelos propios de superficie: Montaña (`Mountain_1_LOD_High.obj`), Pastel (`cake_slice.obj`), Galleta (`cookie.obj`), Helado (`ice_cream_cone.obj`) y Paleta (`lollipop.obj`) |
 | **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | **Reclamado**: Espiral de Fibonacci esférica determinista y distribución azimutal toroidal sobre corteza superior (`seed = 67`) |
 | **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica y normal tangencial de toroide |
 | **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **24** | **Reclamado**: `ProceduralRockShader` + `ToonShader` + `ShipShader` + `AlienEnergyShader` / `ForceFieldShader` (6 pts c/u) |
@@ -316,7 +327,7 @@ El proyecto cuenta con 117 pruebas automatizadas deterministas divididas modular
 | **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0** | Pendiente (descarte $O(1)$ listo; pendiente modelo simplificado) |
 | **Presentación** | Coherencia visual y composición de la escena | 5 | **0** | No iniciado |
 | **Presentación** | Claridad de la experiencia y controles | 5 | **0** | No iniciado |
-| **TOTAL** | | **200 (Máx. 100)** | **162** | **162 pts formalmente implementados y demostrables en vivo (100% de la nota máxima)** |
+| **TOTAL** | | **200 (Máx. 100)** | **172** | **172 pts formalmente implementados y demostrables en vivo (100% de la nota máxima)** |
 
 ---
 
@@ -331,3 +342,5 @@ El proyecto cuenta con 117 pruebas automatizadas deterministas divididas modular
 | **Planeta Rocoso** | `assets/models/rocky/` | Malla esférica, textura difusa y mapa de normales en espacio tangente | Esfera poligonal UV con texturas PNG (albedo y normal map $TBN$) |
 | **Planeta Dona** | `assets/models/donut/donut_8.obj` | Planeta toroidal lejano (260 WU) con campo de fuerza visible y textura horneada (`donut_8.png`) | Modelo 3D toroidal de baja poligonización con textura difusa |
 | **Sol** | `assets/models/sun/` | Estrella central emisora de luz y origen de coordenadas | Malla esférica UV evaluada con `PlasmaShader` animado |
+| **Planeta Destruido** | `assets/models/destroyed/` | Segundo planeta explorable, con geometría fragmentada, albedo y normal map | Modelo creado por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
+| **Escombros orbitales** | `assets/models/objects/escombro1/` y `escombro2/` | Dos variantes reutilizadas en el anillo del planeta destruido | Modelos creados por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |

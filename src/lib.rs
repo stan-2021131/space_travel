@@ -35,7 +35,7 @@ pub use pipeline::{
 };
 pub use procedural::generate_icosphere;
 pub use scene::{
-    CelestialBody,
+    CelestialBody, DebrisInstance, DebrisRing,
     surface::{
         SurfaceGroup, SurfaceInstance, calculate_surface_embedding,
         generate_spherical_distribution, generate_torus_surface_distribution,

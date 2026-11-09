@@ -29,6 +29,14 @@ fn test_valid_configuration_loading() {
     assert!(config.sun.radius > 0.0);
     assert!(!config.planets.is_empty());
     assert_eq!(config.planets[0].id, "rocoso");
+    let destroyed = config
+        .planets
+        .iter()
+        .find(|planet| planet.id == "destruido")
+        .expect("Debe existir el planeta destruido");
+    assert_eq!(destroyed.debris_rings.len(), 1);
+    assert_eq!(destroyed.debris_rings[0].count, 20);
+    assert_eq!(destroyed.debris_rings[0].model_paths.len(), 2);
 }
 
 #[test]
@@ -111,6 +119,22 @@ fn test_invalid_configuration_rejections() {
     let mut bad_tilt = valid.clone();
     bad_tilt.planets[0].axial_tilt_deg = f32::NAN;
     assert!(bad_tilt.validate(Path::new("test.toml")).is_err());
+
+    let destroyed_index = valid
+        .planets
+        .iter()
+        .position(|planet| planet.id == "destruido")
+        .unwrap();
+    let mut bad_ring_radius = valid.clone();
+    bad_ring_radius.planets[destroyed_index].debris_rings[0].inner_radius =
+        bad_ring_radius.planets[destroyed_index].radius;
+    assert!(bad_ring_radius.validate(Path::new("test.toml")).is_err());
+
+    let mut bad_ring_models = valid.clone();
+    bad_ring_models.planets[destroyed_index].debris_rings[0]
+        .model_paths
+        .clear();
+    assert!(bad_ring_models.validate(Path::new("test.toml")).is_err());
 }
 
 #[test]

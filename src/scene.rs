@@ -3,7 +3,9 @@ use crate::math::{Mat4, Vec3};
 use crate::mesh::Mesh;
 use std::sync::Arc;
 
+pub mod debris_ring;
 pub mod surface;
+pub use debris_ring::{DebrisInstance, DebrisRing};
 pub use surface::{
     SurfaceGroup, SurfaceInstance, calculate_surface_embedding, create_surface_instance,
     generate_torus_surface_distribution,
@@ -26,6 +28,7 @@ pub struct CelestialBody {
     pub rotation_rad: f32,
     pub shader_type: String,
     pub surface_groups: Vec<SurfaceGroup>,
+    pub debris_rings: Vec<DebrisRing>,
     pub gravity_strength: f32,
     pub gravity_radius: f32,
     pub visible_gravity: bool,

@@ -128,6 +128,23 @@ pub struct SurfaceObjectConfig {
     pub fade_range: f32,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct DebrisRingConfig {
+    pub model_paths: Vec<String>,
+    pub count: usize,
+    pub inner_radius: f32,
+    pub outer_radius: f32,
+    pub tilt_deg: f32,
+    pub rotation_period: f32,
+    pub min_scale: f32,
+    pub max_scale: f32,
+    pub height_variation: f32,
+    pub min_spin_period: f32,
+    pub max_spin_period: f32,
+    #[serde(default)]
+    pub collision_margin: f32,
+}
+
 fn default_surface_count() -> usize {
     6
 }
@@ -173,6 +190,8 @@ pub struct PlanetConfig {
     pub axial_tilt_deg: f32,
     #[serde(default)]
     pub surface_objects: Vec<SurfaceObjectConfig>,
+    #[serde(default)]
+    pub debris_rings: Vec<DebrisRingConfig>,
 }
 
 impl PlanetConfig {
@@ -368,6 +387,38 @@ impl AppConfig {
                     return Err(format!(
                         "[{}] En objeto de superficie '{}' del planeta '{}': fade_range ({}) debe ser menor que max_distance ({})",
                         p, obj.name, planet.id, obj.fade_range, obj.max_distance
+                    ));
+                }
+            }
+            for ring in &planet.debris_rings {
+                let invalid_model_path = ring.model_paths.is_empty()
+                    || ring.model_paths.iter().any(|path| path.trim().is_empty());
+                if invalid_model_path
+                    || ring.count == 0
+                    || ring.count > 256
+                    || !ring.inner_radius.is_finite()
+                    || ring.inner_radius <= planet.radius + planet.collision_margin
+                    || !ring.outer_radius.is_finite()
+                    || ring.outer_radius <= ring.inner_radius
+                    || !ring.tilt_deg.is_finite()
+                    || !ring.rotation_period.is_finite()
+                    || ring.rotation_period <= 0.0
+                    || !ring.min_scale.is_finite()
+                    || ring.min_scale <= 0.0
+                    || !ring.max_scale.is_finite()
+                    || ring.max_scale < ring.min_scale
+                    || !ring.height_variation.is_finite()
+                    || ring.height_variation < 0.0
+                    || !ring.min_spin_period.is_finite()
+                    || ring.min_spin_period <= 0.0
+                    || !ring.max_spin_period.is_finite()
+                    || ring.max_spin_period < ring.min_spin_period
+                    || !ring.collision_margin.is_finite()
+                    || ring.collision_margin < 0.0
+                {
+                    return Err(format!(
+                        "[{}] Configuración de anillo de escombros inválida en planeta '{}'",
+                        p, planet.id
                     ));
                 }
             }

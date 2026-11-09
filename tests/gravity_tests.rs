@@ -164,6 +164,7 @@ fn test_planet_effective_gravity_radius_default_and_explicit() {
         visible_gravity: false,
         axial_tilt_deg: 0.0,
         surface_objects: Vec::new(),
+        debris_rings: Vec::new(),
     };
     assert_eq!(
         p_default.effective_gravity_radius(),
