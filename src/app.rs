@@ -13,7 +13,7 @@ use crate::pipeline::{
     ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
-    CelestialBody,
+    CelestialBody, DebrisRing,
     surface::{
         SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
         generate_spherical_distribution,
@@ -127,10 +127,11 @@ impl App {
             rotation_rad: 0.0,
             shader_type: config.sun.shader.clone(),
             surface_groups: Vec::new(),
+            debris_rings: Vec::new(),
         };
 
         let mut planets = Vec::new();
-        for p_cfg in &config.planets {
+        for (planet_index, p_cfg) in config.planets.iter().enumerate() {
             let mut mesh = if p_cfg.mesh_type == "icosphere" {
                 println!(
                     "[PROCEDURAL] Generando esfera geodésica para '{}' (radio: {}, subdiv: {})",
@@ -195,6 +196,36 @@ impl App {
                 ));
             }
 
+            let mut debris_rings = Vec::new();
+            for (ring_index, ring_cfg) in p_cfg.debris_rings.iter().enumerate() {
+                let mut meshes = Vec::with_capacity(ring_cfg.model_paths.len());
+                for model_path in &ring_cfg.model_paths {
+                    println!(
+                        "[RECURSOS] Cargando escombro orbital para planeta '{}': {}",
+                        p_cfg.id, model_path
+                    );
+                    meshes.push(Arc::new(Mesh::load_from_obj(Path::new(model_path))?));
+                }
+                let ring_seed = config.simulation.seed
+                    ^ (planet_index as u32).wrapping_mul(0x9E37_79B9)
+                    ^ (ring_index as u32).wrapping_mul(0x85EB_CA6B);
+                debris_rings.push(DebrisRing::generate(
+                    meshes,
+                    ring_seed,
+                    ring_cfg.count,
+                    ring_cfg.inner_radius,
+                    ring_cfg.outer_radius,
+                    ring_cfg.tilt_deg,
+                    ring_cfg.rotation_period,
+                    ring_cfg.min_scale,
+                    ring_cfg.max_scale,
+                    ring_cfg.height_variation,
+                    ring_cfg.min_spin_period,
+                    ring_cfg.max_spin_period,
+                    ring_cfg.collision_margin,
+                ));
+            }
+
             planets.push(CelestialBody {
                 id: p_cfg.id.clone(),
                 material: p_mesh.material.clone(),
@@ -210,6 +241,7 @@ impl App {
                 rotation_rad: 0.0,
                 shader_type: p_cfg.shader.clone(),
                 surface_groups,
+                debris_rings,
             });
         }
 
@@ -560,7 +592,14 @@ impl App {
             .flat_map(|planet| &planet.surface_groups)
             .map(|group| group.instances.len())
             .sum::<usize>();
-        let mut obstacles = Vec::with_capacity(1 + self.planets.len() + surface_count);
+        let debris_count = self
+            .planets
+            .iter()
+            .flat_map(|planet| &planet.debris_rings)
+            .map(|ring| ring.instances.len())
+            .sum::<usize>();
+        let mut obstacles =
+            Vec::with_capacity(1 + self.planets.len() + surface_count + debris_count);
 
         obstacles.push(CollisionSphere::new(
             self.sun_body.position,
@@ -586,6 +625,17 @@ impl App {
                         * Mat4::uniform_scaling(instance.base_scale);
                     let center = object_transform.transform_point(local_mesh_center);
                     let radius = (mesh_radius * instance.base_scale).max(0.15);
+                    obstacles.push(CollisionSphere::new(center, radius));
+                }
+            }
+
+            for ring in &planet.debris_rings {
+                for instance in &ring.instances {
+                    let mesh = &ring.meshes[instance.mesh_index];
+                    let (model, _) =
+                        ring.instance_matrices(planet.position, instance, self.sim_time);
+                    let center = model.transform_point(mesh.aabb.center());
+                    let radius = mesh.geometric_radius() * instance.scale + ring.collision_margin;
                     obstacles.push(CollisionSphere::new(center, radius));
                 }
             }
@@ -657,7 +707,12 @@ impl App {
                 .iter()
                 .map(|g| g.mesh.aabb.size().y * g.instances.first().map_or(0.0, |i| i.base_scale))
                 .fold(0.0f32, f32::max);
-            let planet_cull_radius = planet.radius + max_surface_extent;
+            let ring_extent = planet
+                .debris_rings
+                .iter()
+                .map(DebrisRing::culling_radius)
+                .fold(0.0f32, f32::max);
+            let planet_cull_radius = (planet.radius + max_surface_extent).max(ring_extent);
             let planet_visible = frustum.intersects_sphere(planet.position, planet_cull_radius);
             if !planet_visible {
                 // Si el planeta completo está fuera de visión, descartarlo y omitir todas sus montañas
@@ -667,6 +722,10 @@ impl App {
                     stats.objetos_descartados_frustum += group.instances.len();
                     stats.triangulos_descartados_frustum +=
                         (group.mesh.indices.len() / 3) * group.instances.len();
+                }
+                for ring in &planet.debris_rings {
+                    stats.objetos_descartados_frustum += ring.instances.len();
+                    stats.triangulos_descartados_frustum += ring.triangle_count();
                 }
                 continue;
             }
@@ -786,6 +845,39 @@ impl App {
                         &obj_rot,
                         &vp_matrix,
                         &group.mesh.material,
+                        &mut target,
+                        stats,
+                    );
+                }
+            }
+
+            // 2.2 Anillos de escombros: comparten la traslación orbital del planeta,
+            // pero su revolución y el giro de cada pieza dependen de periodos propios.
+            for ring in &planet.debris_rings {
+                for instance in &ring.instances {
+                    let mesh = &ring.meshes[instance.mesh_index];
+                    let (model, rotation) =
+                        ring.instance_matrices(planet.position, instance, self.sim_time);
+                    let mesh_center = model.transform_point(mesh.aabb.center());
+                    let mesh_radius = mesh.geometric_radius() * instance.scale;
+                    if !frustum.intersects_sphere(mesh_center, mesh_radius) {
+                        stats.objetos_descartados_frustum += 1;
+                        stats.triangulos_descartados_frustum += mesh.triangle_count();
+                        continue;
+                    }
+
+                    Self::draw_mesh(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.normal_mapped_shader,
+                        mesh,
+                        &model,
+                        &rotation,
+                        &vp_matrix,
+                        &mesh.material,
                         &mut target,
                         stats,
                     );
