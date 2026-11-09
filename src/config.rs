@@ -117,6 +117,12 @@ pub struct SurfaceObjectConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct PlanetComponentConfig {
+    pub name: String,
+    pub model_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct DebrisRingConfig {
     pub model_paths: Vec<String>,
     pub count: usize,
@@ -172,6 +178,8 @@ pub struct PlanetConfig {
     pub surface_objects: Vec<SurfaceObjectConfig>,
     #[serde(default)]
     pub debris_rings: Vec<DebrisRingConfig>,
+    #[serde(default)]
+    pub components: Vec<PlanetComponentConfig>,
 }
 
 fn default_mesh_type() -> String {
@@ -357,6 +365,18 @@ impl AppConfig {
                 {
                     return Err(format!(
                         "[{}] Configuración de anillo de escombros inválida en planeta '{}'",
+                        p, planet.id
+                    ));
+                }
+            }
+            let mut component_names = HashSet::new();
+            for component in &planet.components {
+                if component.name.trim().is_empty()
+                    || component.model_path.trim().is_empty()
+                    || !component_names.insert(component.name.as_str())
+                {
+                    return Err(format!(
+                        "[{}] Componente celeste inválido o duplicado en planeta '{}'",
                         p, planet.id
                     ));
                 }

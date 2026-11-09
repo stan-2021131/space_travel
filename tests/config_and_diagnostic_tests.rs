@@ -37,6 +37,13 @@ fn test_valid_configuration_loading() {
     assert_eq!(destroyed.debris_rings.len(), 1);
     assert_eq!(destroyed.debris_rings[0].count, 20);
     assert_eq!(destroyed.debris_rings[0].model_paths.len(), 2);
+    let kirby = config
+        .planets
+        .iter()
+        .find(|planet| planet.id == "kirby")
+        .expect("Debe existir el planeta Kirby");
+    assert_eq!(kirby.components.len(), 5);
+    assert_eq!(kirby.radius + kirby.collision_margin, 13.5);
 }
 
 #[test]
@@ -130,6 +137,26 @@ fn test_invalid_configuration_rejections() {
         .model_paths
         .clear();
     assert!(bad_ring_models.validate(Path::new("test.toml")).is_err());
+
+    let kirby_index = valid
+        .planets
+        .iter()
+        .position(|planet| planet.id == "kirby")
+        .unwrap();
+    let mut bad_component_path = valid.clone();
+    bad_component_path.planets[kirby_index].components[0].model_path = "  ".to_string();
+    assert!(bad_component_path.validate(Path::new("test.toml")).is_err());
+
+    let mut duplicate_component = valid.clone();
+    let duplicate_name = duplicate_component.planets[kirby_index].components[0]
+        .name
+        .clone();
+    duplicate_component.planets[kirby_index].components[1].name = duplicate_name;
+    assert!(
+        duplicate_component
+            .validate(Path::new("test.toml"))
+            .is_err()
+    );
 }
 
 #[test]

@@ -8,6 +8,29 @@ pub mod surface;
 pub use debris_ring::{DebrisInstance, DebrisRing};
 pub use surface::{SurfaceGroup, SurfaceInstance, calculate_surface_embedding};
 
+#[derive(Debug, Clone)]
+pub struct CelestialComponent {
+    pub name: String,
+    pub mesh: Arc<Mesh>,
+    /// Radio máximo desde el origen compartido del cuerpo compuesto.
+    pub origin_radius: f32,
+}
+
+impl CelestialComponent {
+    pub fn new(name: String, mesh: Arc<Mesh>) -> Self {
+        let origin_radius = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position.length())
+            .fold(0.0f32, f32::max);
+        Self {
+            name,
+            mesh,
+            origin_radius,
+        }
+    }
+}
+
 /// Representa un cuerpo celeste (Sol o Planeta) en la simulación orbital.
 #[derive(Debug, Clone)]
 pub struct CelestialBody {
@@ -26,6 +49,7 @@ pub struct CelestialBody {
     pub shader_type: String,
     pub surface_groups: Vec<SurfaceGroup>,
     pub debris_rings: Vec<DebrisRing>,
+    pub components: Vec<CelestialComponent>,
 }
 
 impl CelestialBody {
@@ -56,5 +80,13 @@ impl CelestialBody {
     /// Retorna la matriz de rotación pura para transformar normales con escala uniforme.
     pub fn rotation_matrix(&self) -> Mat4 {
         Mat4::rotation_y(self.rotation_rad)
+    }
+
+    /// Radio envolvente del cuerpo principal y todos sus componentes con origen compartido.
+    pub fn composite_radius(&self) -> f32 {
+        self.components
+            .iter()
+            .map(|component| component.origin_radius * self.scale)
+            .fold(self.radius, f32::max)
     }
 }

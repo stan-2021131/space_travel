@@ -128,6 +128,15 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
 - El anillo y cada escombro participan en frustum culling, métricas de triángulos y colisiones de la nave y los enemigos.
 - Todos sus parámetros se encuentran en `[[planets.debris_rings]]` dentro de `config/solar_system.toml`.
 
+### 8.2 Planeta compuesto Kirby
+
+- La plataforma actúa como malla principal y determina la escala común del cuerpo celeste.
+- Propulsor, cuerpo, pies, ojos y boca son `CelestialComponent` rígidos que conservan el origen compartido definido en Blender.
+- Todos los componentes reutilizan una única matriz padre de modelo, por lo que orbitan y rotan solidariamente sin offsets manuales.
+- Plataforma y propulsor usan normal mapping; cuerpo, pies, ojos y boca conservan sus materiales y normales geométricas.
+- El radio de culling se calcula a partir del vértice más lejano de cada componente. Una esfera de colisión conservadora de `13.5 WU` cubre el conjunto completo.
+- Sus rutas se declaran mediante `[[planets.components]]` en `config/solar_system.toml`.
+
 ---
 
 ## 9. Dependencias Utilizadas
@@ -164,7 +173,7 @@ cargo fmt --check
 # Análisis estático sin advertencias
 cargo clippy --all-targets
 
-# Suite completa de pruebas automatizadas (86 pruebas deterministas)
+# Suite completa de pruebas automatizadas (89 pruebas deterministas)
 cargo test
 ```
 
@@ -244,7 +253,7 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 13. Pruebas Automatizadas
 
-El proyecto cuenta con 86 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con 89 pruebas automatizadas deterministas divididas modularmente en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
 - **Pipeline de Renderizado y Paralelización** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos de posición, normal, tangente y UV), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, partición horizontal de pantalla en franjas disjuntas (*Scanline Slicing*) y verificación de equivalencia determinista idéntica píxel por píxel entre renderizado monohilo y multihilo en CPU.
 - **Descarte de Visión / Frustum Culling** (`frustum_tests.rs`): Extracción analítica de los 6 planos del frustum desde la matriz de Vista-Proyección ($VP = P \cdot V$) mediante Gribb-Hartmann, normalización de planos, distancias signadas, intersección analítica con esferas envolventes, descarte estricto en los 6 ejes y acumulación de métricas diagnósticas.
@@ -255,6 +264,7 @@ El proyecto cuenta con 86 pruebas automatizadas deterministas divididas modularm
 - **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista, shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`), shader de nave espacial (`ShipShader`) y shader alienígena animado (`AlienEnergyShader`) con borde Fresnel.
 - **Objetos de Superficie y Distribución Esférica** (`surface_tests.rs`): Distribución esférica uniforme de Fibonacci con semilla determinista, ortonormalidad estricta de la base local y alineación perpendicular a la normal radial de la esfera curva, descarte por distancia $O(1)$ con transición cúbica suave (*smoothstep*), enraizamiento geométrico universal automático por sagita esférica (`calculate_surface_embedding`) para evitar flotación sobre terreno curvo/facetas, carga íntegra de modelo de montaña OBJ/MTL y parseo declarativo en TOML.
 - **Anillo de Escombros** (`debris_ring_tests.rs`): Distribución determinista y acotada de variantes, repetición exacta de la revolución tras su periodo, seguimiento de la traslación del planeta, giro individual independiente y carga íntegra de albedo y normal map para el planeta destruido y ambos escombros.
+- **Componentes Celestes** (`celestial_component_tests.rs`): Carga y presupuesto exacto de los seis componentes del planeta Kirby, materiales esperados, transformación padre compartida y cobertura completa del radio compuesto mediante la esfera de colisión aprobada.
 - **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
 - **Configuración y Diagnósticos** (`config_and_diagnostic_tests.rs`): Carga y validación exhaustiva de `solar_system.toml` con semilla universal, rechazo de parámetros no finitos o duplicados, generación de cuerpos procedurales por configuración TOML y ciclado de modos diagnósticos con `F2` y `F3`.
 
@@ -279,8 +289,9 @@ El proyecto cuenta con 86 pruebas automatizadas deterministas divididas modularm
   - Implementación del sistema de distribución procedural de objetos en superficie esférica con orientación curva, enraizamiento geométrico universal y descarte por distancia suave (`src/scene/surface.rs`).
   - Implementación del sistema de Frustum Culling analítico mediante extracción de planos Gribb-Hartmann y descarte esférico multinivel (`src/camera.rs`).
   - Implementación del sistema de paralelización de renderizado en CPU sin dependencias externas mediante partición horizontal de pantalla en franjas contiguas disjuntas (*Scanline Slicing*) con `std::thread::scope` en rasterización y `SkyShader`.
-  - Batería de 86 pruebas deterministas modulares y documentación técnica.
+  - Batería de 89 pruebas deterministas modulares y documentación técnica.
   - Integración del planeta destruido y su anillo orbital determinista con rotación independiente, colisiones y descarte por frustum.
+  - Integración jerárquica del planeta Kirby mediante componentes rígidos con origen y transformación padre compartidos.
 
 ---
 
@@ -290,7 +301,7 @@ El proyecto cuenta con 86 pruebas automatizadas deterministas divididas modularm
 |---|---|:---:|:---:|---|
 | **Base Habilitante** | Renderer 3D propio en CPU (Sin funciones 3D de Raylib) | Requisito | 0 | Implementado y Validado |
 | **Base Habilitante** | Carga y dibujo con MVP, Z-Buffer y Shader en CPU | Requisito | 0 | Implementado y Validado |
-| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **20** | **Reclamado**: Planeta Rocoso y Planeta Destruido con órbita, rotación sobre eje y exploración cercana |
+| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **30** | **Reclamado**: Planeta Rocoso, Planeta Destruido y Planeta Kirby con órbita, rotación sobre eje y exploración cercana |
 | **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **5** | **Reclamado**: Modelo de Montaña (`Mountain_1_LOD_High.obj`) |
 | **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | **Reclamado**: Espiral de Fibonacci esférica determinista (`seed = 67`) |
 | **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica |
@@ -307,7 +318,7 @@ El proyecto cuenta con 86 pruebas automatizadas deterministas divididas modularm
 | **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0** | Pendiente (descarte $O(1)$ listo; pendiente modelo simplificado) |
 | **Presentación** | Coherencia visual y composición de la escena | 5 | **0** | No iniciado |
 | **Presentación** | Claridad de la experiencia y controles | 5 | **0** | No iniciado |
-| **TOTAL** | | **200 (Máx. 100)** | **119** | **119 pts formalmente implementados y demostrables en vivo (100% de la nota máxima)** |
+| **TOTAL** | | **200 (Máx. 100)** | **129** | **129 pts formalmente implementados y demostrables en vivo (100% de la nota máxima)** |
 
 ---
 
@@ -321,3 +332,4 @@ El proyecto cuenta con 86 pruebas automatizadas deterministas divididas modularm
 | **Sol** | `assets/models/sun/` | Estrella central emisora de luz y origen de coordenadas | Malla esférica UV evaluada con `PlasmaShader` animado |
 | **Planeta Destruido** | `assets/models/destroyed/` | Segundo planeta explorable, con geometría fragmentada, albedo y normal map | Modelo creado por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Escombros orbitales** | `assets/models/objects/escombro1/` y `escombro2/` | Dos variantes reutilizadas en el anillo del planeta destruido | Modelos creados por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
+| **Planeta Kirby** | `assets/models/kirby_planet/` y `assets/sources/kirby_planet/` | Plataforma orbital, propulsor y personaje compuesto por cuerpo, pies, ojos y boca | Modelado y ensamblado por Juanda en Blender; texturas generadas con asistencia de Gemini y revisadas por el equipo |

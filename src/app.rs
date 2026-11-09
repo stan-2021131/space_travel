@@ -13,7 +13,7 @@ use crate::pipeline::{
     ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
-    CelestialBody, DebrisRing,
+    CelestialBody, CelestialComponent, DebrisRing,
     surface::{
         SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
         generate_spherical_distribution,
@@ -128,6 +128,7 @@ impl App {
             shader_type: config.sun.shader.clone(),
             surface_groups: Vec::new(),
             debris_rings: Vec::new(),
+            components: Vec::new(),
         };
 
         let mut planets = Vec::new();
@@ -226,6 +227,20 @@ impl App {
                 ));
             }
 
+            let mut components = Vec::with_capacity(p_cfg.components.len());
+            for component_cfg in &p_cfg.components {
+                println!(
+                    "[RECURSOS] Cargando componente '{}' para planeta '{}': {}",
+                    component_cfg.name, p_cfg.id, component_cfg.model_path
+                );
+                let component_mesh =
+                    Arc::new(Mesh::load_from_obj(Path::new(&component_cfg.model_path))?);
+                components.push(CelestialComponent::new(
+                    component_cfg.name.clone(),
+                    component_mesh,
+                ));
+            }
+
             planets.push(CelestialBody {
                 id: p_cfg.id.clone(),
                 material: p_mesh.material.clone(),
@@ -242,6 +257,7 @@ impl App {
                 shader_type: p_cfg.shader.clone(),
                 surface_groups,
                 debris_rings,
+                components,
             });
         }
 
@@ -712,7 +728,9 @@ impl App {
                 .iter()
                 .map(DebrisRing::culling_radius)
                 .fold(0.0f32, f32::max);
-            let planet_cull_radius = (planet.radius + max_surface_extent).max(ring_extent);
+            let planet_cull_radius = (planet.radius + max_surface_extent)
+                .max(ring_extent)
+                .max(planet.composite_radius());
             let planet_visible = frustum.intersects_sphere(planet.position, planet_cull_radius);
             if !planet_visible {
                 // Si el planeta completo está fuera de visión, descartarlo y omitir todas sus montañas
@@ -726,6 +744,10 @@ impl App {
                 for ring in &planet.debris_rings {
                     stats.objetos_descartados_frustum += ring.instances.len();
                     stats.triangulos_descartados_frustum += ring.triangle_count();
+                }
+                for component in &planet.components {
+                    stats.objetos_descartados_frustum += 1;
+                    stats.triangulos_descartados_frustum += component.mesh.triangle_count();
                 }
                 continue;
             }
@@ -786,7 +808,53 @@ impl App {
                 );
             }
 
-            // 2.1 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
+            // 2.1 Componentes rígidos con origen compartido. Usan la misma matriz
+            // padre para conservar exactamente el ensamblaje creado en Blender.
+            for component in &planet.components {
+                let component_center = p_model.transform_point(component.mesh.aabb.center());
+                let component_radius = component.mesh.geometric_radius() * planet.scale;
+                if !frustum.intersects_sphere(component_center, component_radius) {
+                    stats.objetos_descartados_frustum += 1;
+                    stats.triangulos_descartados_frustum += component.mesh.triangle_count();
+                    continue;
+                }
+
+                if component.mesh.material.normal_texture.is_some() {
+                    Self::draw_mesh(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.normal_mapped_shader,
+                        &component.mesh,
+                        &p_model,
+                        &p_rot,
+                        &vp_matrix,
+                        &component.mesh.material,
+                        &mut target,
+                        stats,
+                    );
+                } else {
+                    Self::draw_mesh(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.planet_shader,
+                        &component.mesh,
+                        &p_model,
+                        &p_rot,
+                        &vp_matrix,
+                        &component.mesh.material,
+                        &mut target,
+                        stats,
+                    );
+                }
+            }
+
+            // 2.2 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
             for group in &planet.surface_groups {
                 let dist_to_planet_center = (self.camera.eye - planet.position).length();
                 let dist_to_surface = (dist_to_planet_center - planet.radius).max(0.0);
@@ -851,7 +919,7 @@ impl App {
                 }
             }
 
-            // 2.2 Anillos de escombros: comparten la traslación orbital del planeta,
+            // 2.3 Anillos de escombros: comparten la traslación orbital del planeta,
             // pero su revolución y el giro de cada pieza dependen de periodos propios.
             for ring in &planet.debris_rings {
                 for instance in &ring.instances {

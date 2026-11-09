@@ -132,3 +132,34 @@ rotation_period = 25.0
 initial_orbital_angle_deg = 110.0
 collision_margin = 1.0
 shader = "procedural_rock"
+
+[[planets]]
+id = "kirby"
+model_path = "assets/models/kirby_planet/platform/platformobj.obj"
+radius = 10.0
+orbital_radius = 205.0
+orbital_period = 210.0
+rotation_period = 42.0
+initial_orbital_angle_deg = 300.0
+collision_margin = 3.5
+shader = "normal_mapped"
+
+  [[planets.components]]
+  name = "Propulsor"
+  model_path = "assets/models/kirby_planet/thruster/thruster.obj"
+
+  [[planets.components]]
+  name = "Cuerpo y brazos"
+  model_path = "assets/models/kirby_planet/kirby_body/kirby_body.obj"
+
+  [[planets.components]]
+  name = "Pies"
+  model_path = "assets/models/kirby_planet/kirby_feet/feet.obj"
+
+  [[planets.components]]
+  name = "Ojos"
+  model_path = "assets/models/kirby_planet/kirby_eyes/eyes.obj"
+
+  [[planets.components]]
+  name = "Boca"
+  model_path = "assets/models/kirby_planet/kirby_mouth/mouth.obj"

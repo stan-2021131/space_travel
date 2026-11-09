@@ -32,7 +32,7 @@ pub use pipeline::{
 };
 pub use procedural::generate_icosphere;
 pub use scene::{
-    CelestialBody, DebrisInstance, DebrisRing,
+    CelestialBody, CelestialComponent, DebrisInstance, DebrisRing,
     surface::{
         SurfaceGroup, SurfaceInstance, calculate_surface_embedding, generate_spherical_distribution,
     },
