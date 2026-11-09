@@ -157,7 +157,7 @@ cargo fmt --check
 # Análisis estático sin advertencias
 cargo clippy --all-targets
 
-# Suite completa de pruebas automatizadas (113 pruebas deterministas en 18 suites)
+# Suite completa de pruebas automatizadas (117 pruebas deterministas en 18 suites)
 cargo test
 ```
 
@@ -246,7 +246,7 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 13. Pruebas Automatizadas
 
-El proyecto cuenta con 113 pruebas automatizadas deterministas divididas modularmente en 18 test suites en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con 117 pruebas automatizadas deterministas divididas modularmente en 18 test suites en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
 - **Pipeline de Renderizado y Paralelización** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos de posición, normal, tangente y UV), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, partición horizontal de pantalla en franjas disjuntas (*Scanline Slicing*), soporte para modo opaco y mezcla alfa (*Alpha Blending*), y verificación de equivalencia determinista idéntica píxel por píxel entre renderizado monohilo y multihilo en CPU.
 - **Descarte de Visión / Frustum Culling** (`frustum_tests.rs`): Extracción analítica de los 6 planos del frustum desde la matriz de Vista-Proyección ($VP = P \cdot V$) mediante Gribb-Hartmann, normalización de planos, distancias signadas, intersección analítica con esferas envolventes, descarte estricto en los 6 ejes y acumulación de métricas diagnósticas.
@@ -256,7 +256,7 @@ El proyecto cuenta con 113 pruebas automatizadas deterministas divididas modular
 - **Mapeo de Normales en Software** (`normal_mapping_tests.rs`): Decodificación de espacio tangente a espacio de mundo mediante matriz ortonormal $TBN = [T \mid B \mid N]$, verificación de normal neutra $(128, 128, 255)$, redirección real de iluminación ante texels inclinados en tangente y fallback suave ante materiales sin textura de normales.
 - **Shaders Propios y Materiales** (`mesh_and_shader_tests.rs`): Integridad de modelos OBJ, shaders emisivo y texturado, muestreo con repetición en $U$ y clamp en $V$, shader de plasma animado con tiempo, shader procedural de roca con semilla determinista, shader toon con cuantización y silueta rim, shader de fondo cósmico (`SkyShader`), shader de nave espacial (`ShipShader`) y shader alienígena animado (`AlienEnergyShader`) con borde Fresnel.
 - **Shader de Campo de Fuerza / Atmósfera Semitransparente** (`force_field_shader_tests.rs`): Validación del shader de campo de fuerza en CPU con borde Fresnel exponencial en siluetas, mezcla alfa de píxeles (`Color::blend`), pase de profundidad pura sin escritura en el Z-buffer (`RenderBand::test_depth_only`) y consistencia de atributos de cámara y tiempo.
-- **Objetos de Superficie y Distribución Esférica** (`surface_tests.rs`): Distribución esférica uniforme de Fibonacci con semilla determinista, ortonormalidad estricta de la base local y alineación perpendicular a la normal radial de la esfera curva, descarte por distancia $O(1)$ con transición cúbica suave (*smoothstep*), enraizamiento geométrico universal automático por sagita esférica (`calculate_surface_embedding`) para evitar flotación sobre terreno curvo/facetas, carga íntegra de modelo de montaña OBJ/MTL y parseo declarativo en TOML.
+- **Objetos de Superficie y Distribución Esférica/Toroidal** (`surface_tests.rs`): Distribución esférica uniforme de Fibonacci y distribución azimutal sobre corteza toroidal superior con semilla determinista, ortonormalidad estricta de la base local y alineación perpendicular a la normal radial esférica o normal del toroide, descarte por distancia $O(1)$ con transición cúbica suave (*smoothstep*), enraizamiento geométrico universal automático por sagita esférica (`calculate_surface_embedding`) para evitar flotación sobre terreno curvo/facetas, carga íntegra y validación geométrica de los 5 modelos propios (montaña, rebanada de pastel, galleta, cono de helado y paleta), divergencia determinista de semillas entre grupos y parseo declarativo en TOML.
 - **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
 - **Atracción Gravitatoria Planetaria** (`gravity_tests.rs`): Validación de la atracción gravitatoria newtoniana en `ShipState::apply_gravitational_attraction`, decaimiento cúbico suave (*smoothstep*) en los límites de la esfera de influencia, aceleración cero fuera del radio o con fuerza nula, protección contra singularidades en la superficie del astro y cálculo de radio efectivo por defecto vs. explícito en TOML.
 - **Cámara y Modos de Persecución** (`camera_tests.rs` y `local_flight_tests.rs`): Suavizado exponencial de traslación y orientación en tercera persona, modo panorámico centrado en planetas con encuadre orbital óptimo, cálculo de distancias de compromiso y retención de controles de vuelo libre durante la aproximación.
@@ -289,7 +289,7 @@ El proyecto cuenta con 113 pruebas automatizadas deterministas divididas modular
   - Implementación del sistema de Frustum Culling analítico mediante extracción de planos Gribb-Hartmann y descarte esférico multinivel (`src/camera.rs`).
   - Implementación del modo de control local orbital con vista panorámica y retículas HUD dedicadas (`src/camera.rs`, `src/hud.rs`, `src/app.rs`).
   - Implementación del sistema de paralelización de renderizado en CPU sin dependencias externas mediante partición horizontal de pantalla en franjas contiguas disjuntas (*Scanline Slicing*) con `std::thread::scope` en rasterización y `SkyShader`.
-  - Batería de 113 pruebas deterministas modulares (18 suites) y documentación técnica sincronizada.
+  - Batería de 117 pruebas deterministas modulares (18 suites) y documentación técnica sincronizada.
 
 ---
 
@@ -299,10 +299,10 @@ El proyecto cuenta con 113 pruebas automatizadas deterministas divididas modular
 |---|---|:---:|:---:|---|
 | **Base Habilitante** | Renderer 3D propio en CPU (Sin funciones 3D de Raylib) | Requisito | 0 | Implementado y Validado |
 | **Base Habilitante** | Carga y dibujo con MVP, Z-Buffer y Shader en CPU | Requisito | 0 | Implementado y Validado |
-| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **10** | **Reclamado**: Planeta Rocoso con órbita, rotación sobre eje y exploración cercana |
-| **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **5** | **Reclamado**: Modelo de Montaña (`Mountain_1_LOD_High.obj`) |
-| **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | **Reclamado**: Espiral de Fibonacci esférica determinista (`seed = 67`) |
-| **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica |
+| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **30** | **Reclamado**: 3 planetas con órbita, rotación sobre eje y exploración cercana: Rocoso (90 WU), Asteroide Procedural (160 WU) y Planeta Dona con campo de fuerza (260 WU) |
+| **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **20** | **Reclamado**: 4 modelos propios de superficie: Montaña (`Mountain_1_LOD_High.obj`), Pastel (`cake_slice.obj`), Galleta (`cookie.obj`), Helado (`ice_cream_cone.obj`) y Paleta (`lollipop.obj`) |
+| **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | **Reclamado**: Espiral de Fibonacci esférica determinista y distribución azimutal toroidal sobre corteza superior (`seed = 67`) |
+| **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica y normal tangencial de toroide |
 | **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **24** | **Reclamado**: `ProceduralRockShader` + `ToonShader` + `ShipShader` + `AlienEnergyShader` / `ForceFieldShader` (6 pts c/u) |
 | **Renderizado** | Shader animado cuyo efecto cambia con el tiempo | 8 | **8** | **Reclamado**: `PlasmaShader` solar con armónicos animados con tiempo ($dt$) |
 | **Renderizado** | Mapeo de normales en renderer por software | 8 | **8** | **Reclamado**: Base ortonormal $TBN$ en CPU, interpolación en rasterizador y `NormalMappedShader` |
@@ -316,7 +316,7 @@ El proyecto cuenta con 113 pruebas automatizadas deterministas divididas modular
 | **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0** | Pendiente (descarte $O(1)$ listo; pendiente modelo simplificado) |
 | **Presentación** | Coherencia visual y composición de la escena | 5 | **0** | No iniciado |
 | **Presentación** | Claridad de la experiencia y controles | 5 | **0** | No iniciado |
-| **TOTAL** | | **200 (Máx. 100)** | **127** | **127 pts formalmente implementados y demostrables en vivo (100% de la nota máxima)** |
+| **TOTAL** | | **200 (Máx. 100)** | **162** | **162 pts formalmente implementados y demostrables en vivo (100% de la nota máxima)** |
 
 ---
 
@@ -327,5 +327,7 @@ El proyecto cuenta con 113 pruebas automatizadas deterministas divididas modular
 | **Nave Espacial** | `assets/models/nave.obj` | Vehículo del jugador para exploración interactiva | Modelo base libre en formato OBJ adaptado para escala de simulación |
 | **Naves Enemigas** | `assets/models/enemigos.obj` | Naves alienígenas hostiles de combate y patrulla | Modelo 3D propio creado por el equipo para el proyecto |
 | **Montañas** | `assets/models/objects/mountain/` | Objetos de relieve distribuidos sobre superficie esférica | Geometría de entorno en formato OBJ con archivo MTL asociado |
+| **Dulces de Superficie** | `assets/models/objects/{cake,cookie,ice_cream,lollipop}/` | Rebanadas de pastel, galletas con chispas, conos de helado y paletas en la superficie del planeta dona | Modelos 3D propios en formato OBJ/MTL creados para la corteza dulce |
 | **Planeta Rocoso** | `assets/models/rocky/` | Malla esférica, textura difusa y mapa de normales en espacio tangente | Esfera poligonal UV con texturas PNG (albedo y normal map $TBN$) |
+| **Planeta Dona** | `assets/models/donut/donut_8.obj` | Planeta toroidal lejano (260 WU) con campo de fuerza visible y textura horneada (`donut_8.png`) | Modelo 3D toroidal de baja poligonización con textura difusa |
 | **Sol** | `assets/models/sun/` | Estrella central emisora de luz y origen de coordenadas | Malla esférica UV evaluada con `PlasmaShader` animado |
