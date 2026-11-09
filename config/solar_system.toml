@@ -91,6 +91,34 @@ shader = "normal_mapped"
   fade_range = 25.0
 
 [[planets]]
+id = "destruido"
+model_path = "assets/models/destroyed/PlanetaDestruido.obj"
+radius = 12.0
+orbital_radius = 125.0
+orbital_period = 115.0
+rotation_period = 28.0
+initial_orbital_angle_deg = 215.0
+collision_margin = 1.0
+shader = "normal_mapped"
+
+  [[planets.debris_rings]]
+  model_paths = [
+    "assets/models/objects/escombro1/escombro1.obj",
+    "assets/models/objects/escombro2/escombro2.obj",
+  ]
+  count = 20
+  inner_radius = 17.0
+  outer_radius = 22.0
+  tilt_deg = 18.0
+  rotation_period = 42.0
+  min_scale = 0.65
+  max_scale = 1.25
+  height_variation = 1.2
+  min_spin_period = 5.0
+  max_spin_period = 12.0
+  collision_margin = 0.15
+
+[[planets]]
 id = "asteroide"
 mesh_type = "icosphere"
 model_path = ""
