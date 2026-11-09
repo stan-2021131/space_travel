@@ -106,6 +106,11 @@ fn test_invalid_configuration_rejections() {
     bad_model.planets[0].mesh_type = "model".to_string();
     bad_model.planets[0].model_path = "   ".to_string();
     assert!(bad_model.validate(Path::new("test.toml")).is_err());
+
+    // Inclinación axial no finita (NaN)
+    let mut bad_tilt = valid.clone();
+    bad_tilt.planets[0].axial_tilt_deg = f32::NAN;
+    assert!(bad_tilt.validate(Path::new("test.toml")).is_err());
 }
 
 #[test]

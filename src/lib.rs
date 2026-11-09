@@ -37,7 +37,8 @@ pub use procedural::generate_icosphere;
 pub use scene::{
     CelestialBody,
     surface::{
-        SurfaceGroup, SurfaceInstance, calculate_surface_embedding, generate_spherical_distribution,
+        SurfaceGroup, SurfaceInstance, calculate_surface_embedding,
+        generate_spherical_distribution, generate_torus_surface_distribution,
     },
 };
 pub use stats::{DiagnosticControls, FrameStats, StatsDisplayMode, StatsTracker};

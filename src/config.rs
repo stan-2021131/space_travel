@@ -170,6 +170,8 @@ pub struct PlanetConfig {
     #[serde(default)]
     pub visible_gravity: bool,
     #[serde(default)]
+    pub axial_tilt_deg: f32,
+    #[serde(default)]
     pub surface_objects: Vec<SurfaceObjectConfig>,
 }
 
@@ -301,9 +303,15 @@ impl AppConfig {
         ids.insert(self.sun.id.as_str());
 
         for planet in &self.planets {
-            if planet.radius <= 0.0 {
+            if !planet.radius.is_finite() || planet.radius <= 0.0 {
                 return Err(format!(
-                    "[{}] Radio de planeta '{}' debe ser positivo",
+                    "[{}] Radio de planeta '{}' debe ser un número finito positivo",
+                    p, planet.id
+                ));
+            }
+            if !planet.axial_tilt_deg.is_finite() {
+                return Err(format!(
+                    "[{}] Inclinación axial de planeta '{}' debe ser un número finito",
                     p, planet.id
                 ));
             }

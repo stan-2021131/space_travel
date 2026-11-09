@@ -146,6 +146,7 @@ fn test_orbital_mechanics_deterministic() {
         gravity_strength: 0.0,
         gravity_radius: 14.0,
         visible_gravity: false,
+        axial_tilt_rad: 0.0,
         gravity_mesh: None,
     };
 
@@ -189,6 +190,7 @@ fn test_celestial_body_model_and_rotation_matrices() {
         gravity_strength: 0.0,
         gravity_radius: 14.0,
         visible_gravity: false,
+        axial_tilt_rad: 0.0,
         gravity_mesh: None,
     };
 

@@ -113,3 +113,50 @@ shader = "procedural_rock"
 gravity_strength = 6.0
 gravity_radius = 12.0
 visible_gravity = false
+
+[[planets]]
+id = "dona"
+model_path = "assets/models/donut/donut_8.obj"
+radius = 45.0
+orbital_radius = 260.0
+orbital_period = 260.0
+rotation_period = 35.0
+initial_orbital_angle_deg = 200.0
+axial_tilt_deg = 30.0
+collision_margin = 1.0
+shader = "texture"
+gravity_strength = 24.0
+gravity_radius = 85.0
+visible_gravity = true
+
+  [[planets.surface_objects]]
+  name = "Pastel"
+  model_path = "assets/models/objects/cake/cake_slice.obj"
+  count = 8
+  scale = 12.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Galleta"
+  model_path = "assets/models/objects/cookie/cookie.obj"
+  count = 8
+  scale = 14.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Helado"
+  model_path = "assets/models/objects/ice_cream/ice_cream_cone.obj"
+  count = 8
+  scale = 8.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Paleta"
+  model_path = "assets/models/objects/lollipop/lollipop.obj"
+  count = 8
+  scale = 8.0
+  max_distance = 120.0
+  fade_range = 40.0

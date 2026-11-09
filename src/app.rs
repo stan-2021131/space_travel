@@ -20,7 +20,7 @@ use crate::scene::{
     CelestialBody,
     surface::{
         SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
-        generate_spherical_distribution,
+        generate_spherical_distribution, generate_torus_surface_distribution,
     },
 };
 use crate::stats::{FrameStats, StatsTracker};
@@ -145,6 +145,7 @@ impl App {
             gravity_strength: config.sun.gravity_strength,
             gravity_radius: sun_effective_grav_radius,
             visible_gravity: config.sun.visible_gravity,
+            axial_tilt_rad: 0.0,
             gravity_mesh: sun_grav_mesh,
         };
 
@@ -190,7 +191,9 @@ impl App {
             let p_mesh = Arc::new(mesh);
 
             let mut surface_groups = Vec::new();
-            for s_cfg in &p_cfg.surface_objects {
+            let is_toroidal = p_mesh.aabb.size().y < p_mesh.aabb.size().x * 0.6;
+
+            for (group_idx, s_cfg) in p_cfg.surface_objects.iter().enumerate() {
                 println!(
                     "[RECURSOS] Cargando objeto de superficie '{}' para planeta '{}': {}",
                     s_cfg.name, p_cfg.id, s_cfg.model_path
@@ -199,12 +202,30 @@ impl App {
                 let embedding =
                     calculate_surface_embedding(p_cfg.radius, &s_mesh.aabb, s_cfg.scale);
                 let effective_radius = (p_cfg.radius - embedding).max(1.0);
-                let instances = generate_spherical_distribution(
-                    config.simulation.seed,
-                    s_cfg.count,
-                    effective_radius,
-                    s_cfg.scale,
-                );
+
+                let group_seed = config
+                    .simulation
+                    .seed
+                    .wrapping_add((group_idx as u32).wrapping_mul(1013904223));
+
+                let instances = if is_toroidal {
+                    generate_torus_surface_distribution(
+                        group_seed,
+                        s_cfg.count,
+                        &p_mesh,
+                        p_scale,
+                        s_cfg.scale,
+                        embedding,
+                    )
+                } else {
+                    generate_spherical_distribution(
+                        group_seed,
+                        s_cfg.count,
+                        effective_radius,
+                        s_cfg.scale,
+                    )
+                };
+
                 surface_groups.push(SurfaceGroup::new(
                     s_cfg.name.clone(),
                     s_mesh,
@@ -239,6 +260,7 @@ impl App {
                 gravity_strength: p_cfg.gravity_strength,
                 gravity_radius: p_effective_grav_radius,
                 visible_gravity: p_cfg.visible_gravity,
+                axial_tilt_rad: deg_to_rad(p_cfg.axial_tilt_deg),
                 gravity_mesh: p_grav_mesh,
             });
         }
