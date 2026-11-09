@@ -2,21 +2,25 @@ use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::camera::Camera;
 use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh};
 use crate::config::AppConfig;
-use crate::hud::{draw_aim_reticle, draw_health_bar, project_world_to_screen};
+use crate::hud::{
+    draw_aim_reticle, draw_health_bar, draw_orbital_lock_reticle, draw_orbital_mode_badge,
+    project_world_to_screen,
+};
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
 use crate::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
 use crate::pipeline::{
-    AlienEnergyShader, DepthDebugShader, EmissiveShader, FragmentShader, NormalMappedShader,
-    NormalsDebugShader, PlasmaShader, ProceduralRockShader, RenderContext, RenderTarget,
-    ShaderMode, ShipShader, SkyShader, SoftwareRenderer, TexturedDiffuseShader, ToonShader,
+    AlienEnergyShader, BlendMode, DepthDebugShader, EmissiveShader, ForceFieldShader,
+    FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
+    RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
+    TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
     CelestialBody, CelestialComponent, DebrisRing,
     surface::{
         SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
-        generate_spherical_distribution,
+        generate_spherical_distribution, generate_torus_surface_distribution,
     },
 };
 use crate::stats::{FrameStats, StatsTracker};
@@ -50,12 +54,16 @@ pub struct App {
     sim_time: f32,
     accumulator: f32,
     pub shader_mode: ShaderMode,
+    pub gravity_enabled: bool,
+    pub local_flight_mode: bool,
+    pub nearby_planet_idx: Option<usize>,
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
     normal_mapped_shader: NormalMappedShader,
     rock_shader: ProceduralRockShader,
     plasma_shader: PlasmaShader,
+    force_field_shader: ForceFieldShader,
     ship_shader: ShipShader,
     enemy_shader: AlienEnergyShader,
     enemy_material: Material,
@@ -112,6 +120,13 @@ impl App {
         let sun_geo_radius = sun_mesh.geometric_radius().max(1e-4);
         let sun_scale = config.sun.radius / sun_geo_radius;
 
+        let sun_effective_grav_radius = config.sun.effective_gravity_radius();
+        let sun_grav_mesh = if config.sun.visible_gravity {
+            Some(Arc::new(crate::procedural::generate_icosphere(1.0, 2)))
+        } else {
+            None
+        };
+
         let sun_body = CelestialBody {
             id: config.sun.id.clone(),
             material: sun_mesh.material.clone(),
@@ -129,6 +144,11 @@ impl App {
             surface_groups: Vec::new(),
             debris_rings: Vec::new(),
             components: Vec::new(),
+            gravity_strength: config.sun.gravity_strength,
+            gravity_radius: sun_effective_grav_radius,
+            visible_gravity: config.sun.visible_gravity,
+            axial_tilt_rad: 0.0,
+            gravity_mesh: sun_grav_mesh,
         };
 
         let mut planets = Vec::new();
@@ -173,7 +193,9 @@ impl App {
             let p_mesh = Arc::new(mesh);
 
             let mut surface_groups = Vec::new();
-            for s_cfg in &p_cfg.surface_objects {
+            let is_toroidal = p_mesh.aabb.size().y < p_mesh.aabb.size().x * 0.6;
+
+            for (group_idx, s_cfg) in p_cfg.surface_objects.iter().enumerate() {
                 println!(
                     "[RECURSOS] Cargando objeto de superficie '{}' para planeta '{}': {}",
                     s_cfg.name, p_cfg.id, s_cfg.model_path
@@ -182,12 +204,30 @@ impl App {
                 let embedding =
                     calculate_surface_embedding(p_cfg.radius, &s_mesh.aabb, s_cfg.scale);
                 let effective_radius = (p_cfg.radius - embedding).max(1.0);
-                let instances = generate_spherical_distribution(
-                    config.simulation.seed,
-                    s_cfg.count,
-                    effective_radius,
-                    s_cfg.scale,
-                );
+
+                let group_seed = config
+                    .simulation
+                    .seed
+                    .wrapping_add((group_idx as u32).wrapping_mul(1013904223));
+
+                let instances = if is_toroidal {
+                    generate_torus_surface_distribution(
+                        group_seed,
+                        s_cfg.count,
+                        &p_mesh,
+                        p_scale,
+                        s_cfg.scale,
+                        embedding,
+                    )
+                } else {
+                    generate_spherical_distribution(
+                        group_seed,
+                        s_cfg.count,
+                        effective_radius,
+                        s_cfg.scale,
+                    )
+                };
+
                 surface_groups.push(SurfaceGroup::new(
                     s_cfg.name.clone(),
                     s_mesh,
@@ -196,6 +236,13 @@ impl App {
                     s_cfg.fade_range,
                 ));
             }
+
+            let p_effective_grav_radius = p_cfg.effective_gravity_radius();
+            let p_grav_mesh = if p_cfg.visible_gravity {
+                Some(Arc::new(crate::procedural::generate_icosphere(1.0, 2)))
+            } else {
+                None
+            };
 
             let mut debris_rings = Vec::new();
             for (ring_index, ring_cfg) in p_cfg.debris_rings.iter().enumerate() {
@@ -258,6 +305,11 @@ impl App {
                 surface_groups,
                 debris_rings,
                 components,
+                gravity_strength: p_cfg.gravity_strength,
+                gravity_radius: p_effective_grav_radius,
+                visible_gravity: p_cfg.visible_gravity,
+                axial_tilt_rad: deg_to_rad(p_cfg.axial_tilt_deg),
+                gravity_mesh: p_grav_mesh,
             });
         }
 
@@ -316,10 +368,14 @@ impl App {
             sim_time: 0.0,
             accumulator: 0.0,
             shader_mode: ShaderMode::Normal,
+            gravity_enabled: true,
+            local_flight_mode: false,
+            nearby_planet_idx: None,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
             normal_mapped_shader,
             rock_shader,
             plasma_shader,
+            force_field_shader: ForceFieldShader::new(camera.eye),
             ship_shader,
             enemy_shader,
             enemy_material: Material::new("EnemyHull", Vec3::new(0.55, 0.72, 1.0), None),
@@ -376,6 +432,10 @@ impl App {
         println!("  [Flecha Abajo]   : Pitch abajo");
         println!("  [Q] / [E]        : Roll (Alabeo)");
         println!("  [R]              : Reiniciar posición y orientación de la nave");
+        println!("  [G]              : Alternar gravedad planetaria (ON / OFF)");
+        println!(
+            "  [C]              : Alternar modo de control local orbital (cerca de un planeta)"
+        );
         println!("  [Espacio]        : Disparar");
         println!("  [F4]             : Activar/desactivar encuentro con enemigos");
         println!(
@@ -406,14 +466,26 @@ impl App {
                 steps += 1;
             }
 
-            // 3. Suavizado de la cámara de persecución
-            self.camera.update_chase(
-                self.ship_state.position,
-                self.ship_state.forward(),
-                self.ship_state.up(),
-                &self.config.camera,
-                dt,
-            );
+            // 3. Suavizado de la cámara de persecución (modo normal detrás de la nave o panorámico centrado en el planeta)
+            if self.local_flight_mode
+                && let Some(idx) = self.nearby_planet_idx
+                && let Some(planet) = self.planets.get(idx)
+            {
+                self.camera.update_panoramic_planet_view(
+                    planet.position,
+                    planet.radius,
+                    &self.config.camera,
+                    dt,
+                );
+            } else {
+                self.camera.update_chase(
+                    self.ship_state.position,
+                    self.ship_state.forward(),
+                    self.ship_state.up(),
+                    &self.config.camera,
+                    dt,
+                );
+            }
 
             // 4. Renderizado en CPU y medición de métricas
             let frame_start = Instant::now();
@@ -470,6 +542,42 @@ impl App {
             self.ship_state.reset(&self.config.ship);
             self.combat.restore_player_health(&self.config.enemies);
             println!("[SIMULACIÓN] Nave reiniciada a posición inicial.");
+        }
+
+        if rl.is_key_pressed(KeyboardKey::KEY_G) {
+            self.gravity_enabled = !self.gravity_enabled;
+            println!(
+                "[FÍSICA] Gravedad planetaria: {}",
+                if self.gravity_enabled {
+                    "ACTIVADA"
+                } else {
+                    "DESACTIVADA"
+                }
+            );
+        }
+
+        if rl.is_key_pressed(KeyboardKey::KEY_C) {
+            if self.nearby_planet_idx.is_some() {
+                self.local_flight_mode = !self.local_flight_mode;
+                let target_name = self
+                    .nearby_planet_idx
+                    .and_then(|idx| self.planets.get(idx))
+                    .map(|p| p.id.as_str())
+                    .unwrap_or("planeta");
+                println!(
+                    "[NAVEGACIÓN] Modo de control local orbital: {} (fijado a {})",
+                    if self.local_flight_mode {
+                        "ACTIVADO"
+                    } else {
+                        "DESACTIVADO"
+                    },
+                    target_name
+                );
+            } else {
+                println!(
+                    "[NAVEGACIÓN] No hay planetas en rango de aproximación para modo de control local."
+                );
+            }
         }
 
         if rl.is_key_pressed(KeyboardKey::KEY_F4) {
@@ -530,6 +638,53 @@ impl App {
         self.sun_body.update(self.sim_time);
         for planet in &mut self.planets {
             planet.update(self.sim_time);
+        }
+
+        // Detección del planeta más próximo para aproximación y modo local orbital
+        let mut nearest_candidate: Option<(usize, f32)> = None;
+        for (idx, planet) in self.planets.iter().enumerate() {
+            let dist = (self.ship_state.position - planet.position).length();
+            let engagement_range = planet.gravity_radius.max(planet.radius * 2.8);
+            if dist <= engagement_range {
+                match nearest_candidate {
+                    Some((_, current_min)) if dist < current_min => {
+                        nearest_candidate = Some((idx, dist));
+                    }
+                    None => {
+                        nearest_candidate = Some((idx, dist));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.nearby_planet_idx = nearest_candidate.map(|(idx, _)| idx);
+
+        // Desacople automático si la nave se aleja fuera del radio orbital
+        if self.local_flight_mode && self.nearby_planet_idx.is_none() {
+            self.local_flight_mode = false;
+            println!(
+                "[NAVEGACIÓN] Nave fuera del rango orbital. Retornando a vista de persecución."
+            );
+        }
+
+        // Atracción gravitatoria hacia cuerpos celestes si está activada
+        if self.gravity_enabled && self.combat.player_is_alive() {
+            self.ship_state.apply_gravitational_attraction(
+                self.sun_body.position,
+                self.sun_body.radius,
+                self.sun_body.gravity_radius,
+                self.sun_body.gravity_strength,
+                dt,
+            );
+            for planet in &self.planets {
+                self.ship_state.apply_gravitational_attraction(
+                    planet.position,
+                    planet.radius,
+                    planet.gravity_radius,
+                    planet.gravity_strength,
+                    dt,
+                );
+            }
         }
 
         // Envolventes compartidas: Sol, planetas y objetos de superficie.
@@ -1051,6 +1206,49 @@ impl App {
             }
         }
 
+        // 5. Esferas semitransparentes de campo gravitatorio / atmósfera (Alpha Blending)
+        self.force_field_shader.camera_pos = self.camera.eye;
+        self.force_field_shader.sim_time = self.sim_time;
+        let field_material = Material::default();
+
+        if self.sun_body.visible_gravity
+            && let Some(ref field_mesh) = self.sun_body.gravity_mesh
+            && frustum.intersects_sphere(self.sun_body.position, self.sun_body.gravity_radius)
+        {
+            let field_model = self.sun_body.gravity_field_model_matrix();
+            let field_rot = self.sun_body.rotation_matrix();
+            let ctx = RenderContext::new(
+                &field_model,
+                &field_rot,
+                &vp_matrix,
+                &field_material,
+                &self.force_field_shader,
+            )
+            .with_blend_mode(BlendMode::AlphaBlend);
+            self.renderer
+                .render_mesh(field_mesh, &ctx, &mut target, stats);
+        }
+
+        for planet in &self.planets {
+            if planet.visible_gravity
+                && let Some(ref field_mesh) = planet.gravity_mesh
+                && frustum.intersects_sphere(planet.position, planet.gravity_radius)
+            {
+                let field_model = planet.gravity_field_model_matrix();
+                let field_rot = planet.rotation_matrix();
+                let ctx = RenderContext::new(
+                    &field_model,
+                    &field_rot,
+                    &vp_matrix,
+                    &field_material,
+                    &self.force_field_shader,
+                )
+                .with_blend_mode(BlendMode::AlphaBlend);
+                self.renderer
+                    .render_mesh(field_mesh, &ctx, &mut target, stats);
+            }
+        }
+
         // Las barras se dibujan al final como overlay del framebuffer CPU.
         Self::draw_entity_health_bars(
             &mut self.framebuffer,
@@ -1075,6 +1273,24 @@ impl App {
             ) {
                 draw_aim_reticle(&mut self.framebuffer, x, y);
             }
+        }
+
+        // Overlay HUD del Modo Panorámico Planetario
+        if let Some(idx) = self.nearby_planet_idx
+            && let Some(planet) = self.planets.get(idx)
+        {
+            // Marcador/brillo sobre el centro del planeta visible al aproximarse
+            if !self.local_flight_mode
+                && let Some((px, py)) = project_world_to_screen(
+                    &vp_matrix,
+                    planet.position,
+                    self.framebuffer.width,
+                    self.framebuffer.height,
+                )
+            {
+                draw_orbital_lock_reticle(&mut self.framebuffer, px, py, false);
+            }
+            draw_orbital_mode_badge(&mut self.framebuffer, 14, 14, self.local_flight_mode);
         }
     }
 
@@ -1142,43 +1358,43 @@ impl App {
     ) {
         match shader_mode {
             ShaderMode::Normal => {
-                let ctx = RenderContext {
+                let ctx = RenderContext::new(
                     model_matrix,
                     rotation_matrix,
-                    view_proj_matrix: vp_matrix,
+                    vp_matrix,
                     material,
-                    shader: base_shader,
-                };
+                    base_shader,
+                );
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }
             ShaderMode::Toon => {
-                let ctx = RenderContext {
+                let ctx = RenderContext::new(
                     model_matrix,
                     rotation_matrix,
-                    view_proj_matrix: vp_matrix,
+                    vp_matrix,
                     material,
-                    shader: toon_shader,
-                };
+                    toon_shader,
+                );
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }
             ShaderMode::DepthDebug => {
-                let ctx = RenderContext {
+                let ctx = RenderContext::new(
                     model_matrix,
                     rotation_matrix,
-                    view_proj_matrix: vp_matrix,
+                    vp_matrix,
                     material,
-                    shader: depth_shader,
-                };
+                    depth_shader,
+                );
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }
             ShaderMode::NormalsDebug => {
-                let ctx = RenderContext {
+                let ctx = RenderContext::new(
                     model_matrix,
                     rotation_matrix,
-                    view_proj_matrix: vp_matrix,
+                    vp_matrix,
                     material,
-                    shader: normals_shader,
-                };
+                    normals_shader,
+                );
                 renderer.render_mesh(mesh, &ctx, target, stats);
             }
         }

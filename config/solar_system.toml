@@ -61,7 +61,7 @@ position_smoothing = 10.0
 rotation_smoothing = 8.0
 fov_deg = 50.0
 near_plane = 0.1
-far_plane = 500.0
+far_plane = 650.0
 
 [sun]
 id = "sol"
@@ -70,17 +70,23 @@ radius = 30.0
 collision_margin = 1.0
 rotation_period = 120.0
 shader = "plasma"
+gravity_strength = 20.0
+gravity_radius = 35.0
+visible_gravity = false
 
 [[planets]]
 id = "rocoso"
 model_path = "assets/models/rocky/rocky.obj"
 radius = 15.0
-orbital_radius = 90.0
+orbital_radius = 85.0
 orbital_period = 80.0
 rotation_period = 15.0
 initial_orbital_angle_deg = 0.0
 collision_margin = 1.0
 shader = "normal_mapped"
+gravity_strength = 18.0
+gravity_radius = 30.0
+visible_gravity = true
 
   [[planets.surface_objects]]
   name = "Montana"
@@ -94,12 +100,15 @@ shader = "normal_mapped"
 id = "destruido"
 model_path = "assets/models/destroyed/PlanetaDestruido.obj"
 radius = 12.0
-orbital_radius = 125.0
-orbital_period = 115.0
+orbital_radius = 145.0
+orbital_period = 135.0
 rotation_period = 28.0
 initial_orbital_angle_deg = 215.0
 collision_margin = 1.0
 shader = "normal_mapped"
+gravity_strength = 14.0
+gravity_radius = 28.0
+visible_gravity = true
 
   [[planets.debris_rings]]
   model_paths = [
@@ -126,12 +135,15 @@ subdivisions = 2
 radius = 3.0
 deformation_amplitude = 1.2
 deformation_frequency = 0.5
-orbital_radius = 160.0
-orbital_period = 160.0
+orbital_radius = 195.0
+orbital_period = 195.0
 rotation_period = 25.0
 initial_orbital_angle_deg = 110.0
 collision_margin = 1.0
 shader = "procedural_rock"
+gravity_strength = 6.0
+gravity_radius = 12.0
+visible_gravity = false
 
 [[planets]]
 id = "kirby"
@@ -163,3 +175,50 @@ shader = "normal_mapped"
   [[planets.components]]
   name = "Boca"
   model_path = "assets/models/kirby_planet/kirby_mouth/mouth.obj"
+
+[[planets]]
+id = "dona"
+model_path = "assets/models/donut/donut_8.obj"
+radius = 45.0
+orbital_radius = 320.0
+orbital_period = 320.0
+rotation_period = 35.0
+initial_orbital_angle_deg = 200.0
+axial_tilt_deg = 30.0
+collision_margin = 1.0
+shader = "texture"
+gravity_strength = 24.0
+gravity_radius = 85.0
+visible_gravity = true
+
+  [[planets.surface_objects]]
+  name = "Pastel"
+  model_path = "assets/models/objects/cake/cake_slice.obj"
+  count = 8
+  scale = 12.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Galleta"
+  model_path = "assets/models/objects/cookie/cookie.obj"
+  count = 8
+  scale = 14.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Helado"
+  model_path = "assets/models/objects/ice_cream/ice_cream_cone.obj"
+  count = 8
+  scale = 8.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Paleta"
+  model_path = "assets/models/objects/lollipop/lollipop.obj"
+  count = 8
+  scale = 8.0
+  max_distance = 120.0
+  fade_range = 40.0

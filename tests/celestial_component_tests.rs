@@ -71,6 +71,11 @@ fn kirby_composite_radius_fits_approved_collision_sphere() {
         surface_groups: Vec::new(),
         debris_rings: Vec::new(),
         components,
+        gravity_strength: 0.0,
+        gravity_radius: 14.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
     };
 
     assert!(body.composite_radius() > body.radius);
@@ -97,6 +102,11 @@ fn shared_parent_matrix_preserves_component_assembly() {
         surface_groups: Vec::new(),
         debris_rings: Vec::new(),
         components: vec![CelestialComponent::new("hijo".to_string(), mesh)],
+        gravity_strength: 0.0,
+        gravity_radius: 8.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
     };
     body.update(5.0);
 
