@@ -21,6 +21,7 @@ fn dummy_ship_config() -> ShipConfig {
         pitch_speed: 1.5,
         roll_speed: 1.5,
         collision_radius: 0.6,
+        thruster_flames: Vec::new(),
     }
 }
 
@@ -144,6 +145,8 @@ fn test_orbital_mechanics_deterministic() {
         shader_type: "textured_diffuse".to_string(),
         surface_groups: Vec::new(),
         debris_rings: Vec::new(),
+        components: Vec::new(),
+        thruster_flames: Vec::new(),
         gravity_strength: 0.0,
         gravity_radius: 14.0,
         visible_gravity: false,
@@ -189,6 +192,8 @@ fn test_celestial_body_model_and_rotation_matrices() {
         shader_type: "textured_diffuse".to_string(),
         surface_groups: Vec::new(),
         debris_rings: Vec::new(),
+        components: Vec::new(),
+        thruster_flames: Vec::new(),
         gravity_strength: 0.0,
         gravity_radius: 14.0,
         visible_gravity: false,

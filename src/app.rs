@@ -1,7 +1,7 @@
 use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::camera::Camera;
 use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh};
-use crate::config::AppConfig;
+use crate::config::{AppConfig, ThrusterFlameConfig};
 use crate::hud::{
     draw_aim_reticle, draw_health_bar, draw_orbital_lock_reticle, draw_orbital_mode_badge,
     project_world_to_screen,
@@ -14,10 +14,10 @@ use crate::pipeline::{
     AlienEnergyShader, BlendMode, DepthDebugShader, EmissiveShader, ForceFieldShader,
     FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
     RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
-    TexturedDiffuseShader, ToonShader,
+    TexturedDiffuseShader, ThrusterFlameShader, ToonShader,
 };
 use crate::scene::{
-    CelestialBody, DebrisRing,
+    CelestialBody, CelestialComponent, DebrisRing, ThrusterFlame,
     surface::{
         SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
         generate_spherical_distribution, generate_torus_surface_distribution,
@@ -45,6 +45,9 @@ pub struct App {
     enemy_mesh: Arc<Mesh>,
     enemy_scale: f32,
     projectile_mesh: Arc<Mesh>,
+    thruster_flame_mesh: Arc<Mesh>,
+    ship_thruster_flames: Vec<ThrusterFlame>,
+    thruster_flame_material: Material,
     pub combat: CombatSystem,
 
     sun_body: CelestialBody,
@@ -57,6 +60,7 @@ pub struct App {
     pub gravity_enabled: bool,
     pub local_flight_mode: bool,
     pub nearby_planet_idx: Option<usize>,
+    ship_thrust_state: f32,
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
@@ -111,6 +115,13 @@ impl App {
             1.0
         };
         let projectile_mesh = Arc::new(create_projectile_mesh());
+        let thruster_flame_mesh = Arc::new(crate::procedural::generate_thruster_flame(12));
+        let ship_thruster_flames = config
+            .ship
+            .thruster_flames
+            .iter()
+            .map(Self::create_thruster_flame)
+            .collect();
 
         println!(
             "[RECURSOS] Cargando modelo del sol: {}",
@@ -143,6 +154,8 @@ impl App {
             shader_type: config.sun.shader.clone(),
             surface_groups: Vec::new(),
             debris_rings: Vec::new(),
+            components: Vec::new(),
+            thruster_flames: Vec::new(),
             gravity_strength: config.sun.gravity_strength,
             gravity_radius: sun_effective_grav_radius,
             visible_gravity: config.sun.visible_gravity,
@@ -273,6 +286,25 @@ impl App {
                 ));
             }
 
+            let mut components = Vec::with_capacity(p_cfg.components.len());
+            for component_cfg in &p_cfg.components {
+                println!(
+                    "[RECURSOS] Cargando componente '{}' para planeta '{}': {}",
+                    component_cfg.name, p_cfg.id, component_cfg.model_path
+                );
+                let component_mesh =
+                    Arc::new(Mesh::load_from_obj(Path::new(&component_cfg.model_path))?);
+                components.push(CelestialComponent::new(
+                    component_cfg.name.clone(),
+                    component_mesh,
+                ));
+            }
+            let thruster_flames = p_cfg
+                .thruster_flames
+                .iter()
+                .map(Self::create_thruster_flame)
+                .collect();
+
             planets.push(CelestialBody {
                 id: p_cfg.id.clone(),
                 material: p_mesh.material.clone(),
@@ -289,6 +321,8 @@ impl App {
                 shader_type: p_cfg.shader.clone(),
                 surface_groups,
                 debris_rings,
+                components,
+                thruster_flames,
                 gravity_strength: p_cfg.gravity_strength,
                 gravity_radius: p_effective_grav_radius,
                 visible_gravity: p_cfg.visible_gravity,
@@ -346,6 +380,9 @@ impl App {
             enemy_mesh,
             enemy_scale,
             projectile_mesh,
+            thruster_flame_mesh,
+            ship_thruster_flames,
+            thruster_flame_material: Material::new("ThrusterFlame", Vec3::new(1.0, 1.0, 1.0), None),
             combat,
             sun_body,
             planets,
@@ -355,6 +392,7 @@ impl App {
             gravity_enabled: true,
             local_flight_mode: false,
             nearby_planet_idx: None,
+            ship_thrust_state: 0.0,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
             normal_mapped_shader,
             rock_shader,
@@ -380,6 +418,18 @@ impl App {
             normals_shader: NormalsDebugShader,
             stats_tracker: StatsTracker::new(),
         })
+    }
+
+    fn create_thruster_flame(config: &ThrusterFlameConfig) -> ThrusterFlame {
+        ThrusterFlame::from_degrees(
+            config.position,
+            config.rotation_deg,
+            config.radius,
+            config.length,
+            config.animation_speed,
+            config.idle_intensity,
+            config.active_intensity,
+        )
     }
 
     /// Ejecuta el ciclo de vida de la aplicación con Raylib.
@@ -610,6 +660,15 @@ impl App {
         // Actualización del tiempo para shaders animados
         self.plasma_shader.set_time(self.sim_time);
         self.enemy_shader.set_time(self.sim_time);
+        self.ship_thrust_state = if !self.combat.player_is_alive() {
+            0.0
+        } else if input.throttle_forward {
+            1.0
+        } else if input.throttle_reverse {
+            -1.0
+        } else {
+            0.0
+        };
 
         // Una nave destruida permanece ausente e inmóvil hasta reaparecer.
         if self.combat.player_is_alive() {
@@ -867,7 +926,10 @@ impl App {
                 .iter()
                 .map(DebrisRing::culling_radius)
                 .fold(0.0f32, f32::max);
-            let planet_cull_radius = (planet.radius + max_surface_extent).max(ring_extent);
+            let planet_cull_radius = (planet.radius + max_surface_extent)
+                .max(ring_extent)
+                .max(planet.composite_radius())
+                .max(planet.thruster_flame_radius());
             let planet_visible = frustum.intersects_sphere(planet.position, planet_cull_radius);
             if !planet_visible {
                 // Si el planeta completo está fuera de visión, descartarlo y omitir todas sus montañas
@@ -882,6 +944,13 @@ impl App {
                     stats.objetos_descartados_frustum += ring.instances.len();
                     stats.triangulos_descartados_frustum += ring.triangle_count();
                 }
+                for component in &planet.components {
+                    stats.objetos_descartados_frustum += 1;
+                    stats.triangulos_descartados_frustum += component.mesh.triangle_count();
+                }
+                stats.objetos_descartados_frustum += planet.thruster_flames.len();
+                stats.triangulos_descartados_frustum +=
+                    self.thruster_flame_mesh.triangle_count() * planet.thruster_flames.len();
                 continue;
             }
 
@@ -941,7 +1010,74 @@ impl App {
                 );
             }
 
-            // 2.1 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
+            // 2.1 Componentes rígidos con origen compartido. Usan la misma matriz
+            // padre para conservar exactamente el ensamblaje creado en Blender.
+            for component in &planet.components {
+                let component_center = p_model.transform_point(component.mesh.aabb.center());
+                let component_radius = component.mesh.geometric_radius() * planet.scale;
+                if !frustum.intersects_sphere(component_center, component_radius) {
+                    stats.objetos_descartados_frustum += 1;
+                    stats.triangulos_descartados_frustum += component.mesh.triangle_count();
+                    continue;
+                }
+
+                if component.mesh.material.normal_texture.is_some() {
+                    Self::draw_mesh(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.normal_mapped_shader,
+                        &component.mesh,
+                        &p_model,
+                        &p_rot,
+                        &vp_matrix,
+                        &component.mesh.material,
+                        &mut target,
+                        stats,
+                    );
+                } else {
+                    Self::draw_mesh(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.planet_shader,
+                        &component.mesh,
+                        &p_model,
+                        &p_rot,
+                        &vp_matrix,
+                        &component.mesh.material,
+                        &mut target,
+                        stats,
+                    );
+                }
+            }
+
+            // 2.2 Llamas rígidas: heredan la misma órbita, inclinación y rotación del planeta.
+            for flame in &planet.thruster_flames {
+                Self::draw_thruster_flame(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.thruster_flame_mesh,
+                    &self.thruster_flame_material,
+                    flame,
+                    &p_model,
+                    &p_rot,
+                    &vp_matrix,
+                    &mut target,
+                    stats,
+                    self.sim_time,
+                    flame.active_intensity,
+                );
+            }
+
+            // 2.3 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
             for group in &planet.surface_groups {
                 let dist_to_planet_center = (self.camera.eye - planet.position).length();
                 let dist_to_surface = (dist_to_planet_center - planet.radius).max(0.0);
@@ -1006,7 +1142,7 @@ impl App {
                 }
             }
 
-            // 2.2 Anillos de escombros: comparten la traslación orbital del planeta,
+            // 2.4 Anillos de escombros: comparten la traslación orbital del planeta,
             // pero su revolución y el giro de cada pieza dependen de periodos propios.
             for ring in &planet.debris_rings {
                 for instance in &ring.instances {
@@ -1135,6 +1271,33 @@ impl App {
                     &mut target,
                     stats,
                 );
+
+                for flame in &self.ship_thruster_flames {
+                    let intensity = if self.ship_thrust_state > 0.5 {
+                        flame.active_intensity
+                    } else if self.ship_thrust_state < -0.5 {
+                        flame.idle_intensity * 0.45
+                    } else {
+                        flame.idle_intensity
+                    };
+                    Self::draw_thruster_flame(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.thruster_flame_mesh,
+                        &self.thruster_flame_material,
+                        flame,
+                        &ship_model,
+                        &ship_rot,
+                        &vp_matrix,
+                        &mut target,
+                        stats,
+                        self.sim_time,
+                        intensity,
+                    );
+                }
             }
         }
 
@@ -1270,6 +1433,45 @@ impl App {
                 );
             }
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_thruster_flame(
+        renderer: &mut SoftwareRenderer,
+        shader_mode: ShaderMode,
+        depth_shader: &DepthDebugShader,
+        normals_shader: &NormalsDebugShader,
+        toon_shader: &ToonShader,
+        mesh: &Mesh,
+        material: &Material,
+        flame: &ThrusterFlame,
+        parent_model: &Mat4,
+        parent_rotation: &Mat4,
+        vp_matrix: &Mat4,
+        target: &mut RenderTarget<'_>,
+        stats: &mut FrameStats,
+        sim_time: f32,
+        intensity: f32,
+    ) {
+        let flicker = 0.90 + 0.10 * (sim_time * flame.animation_speed).sin();
+        let model = *parent_model * flame.local_model_matrix(intensity, flicker);
+        let rotation = *parent_rotation * flame.rotation;
+        let shader = ThrusterFlameShader::new(sim_time, flame.animation_speed, intensity);
+        Self::draw_mesh(
+            renderer,
+            shader_mode,
+            depth_shader,
+            normals_shader,
+            toon_shader,
+            &shader,
+            mesh,
+            &model,
+            &rotation,
+            vp_matrix,
+            material,
+            target,
+            stats,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]

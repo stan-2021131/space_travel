@@ -7,6 +7,7 @@ pub mod plasma;
 pub mod procedural_rock;
 pub mod ship;
 pub mod sky;
+pub mod thruster_flame;
 pub mod toon;
 
 use crate::buffer::Color;
@@ -22,6 +23,7 @@ pub use plasma::PlasmaShader;
 pub use procedural_rock::ProceduralRockShader;
 pub use ship::ShipShader;
 pub use sky::SkyShader;
+pub use thruster_flame::ThrusterFlameShader;
 pub use toon::ToonShader;
 
 /// Datos interpolados que recibe el shader de fragmentos en cada píxel evaluado en CPU.

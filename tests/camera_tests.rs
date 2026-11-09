@@ -18,6 +18,7 @@ fn dummy_ship_config() -> ShipConfig {
         pitch_speed: 1.5,
         roll_speed: 1.5,
         collision_radius: 0.6,
+        thruster_flames: Vec::new(),
     }
 }
 
