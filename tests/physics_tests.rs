@@ -225,3 +225,96 @@ fn test_celestial_body_model_and_rotation_matrices() {
     assert!((transformed_pt.y - body.position.y).abs() < 1e-4);
     assert!((transformed_pt.z - body.position.z).abs() < 1e-4);
 }
+
+#[test]
+fn test_resolve_sphere_collision_with_rebound() {
+    use space_travel::physics::{CollisionSphere, resolve_sphere_collision_with_rebound};
+
+    let obstacle = CollisionSphere::new(Vec3::zero(), 10.0);
+    let mut ship_pos = Vec3::new(0.0, 0.0, 9.5); // penetración de 1.1 con radio 0.6
+    let mut ship_vel = Vec3::new(2.0, 0.0, -10.0); // moviéndose hacia el centro en -Z
+    let ship_radius = 0.6;
+    let restitution = 0.5;
+
+    let contact = resolve_sphere_collision_with_rebound(
+        &mut ship_pos,
+        &mut ship_vel,
+        ship_radius,
+        obstacle,
+        restitution,
+    );
+
+    assert!(contact.is_some(), "Debe detectar contacto y colisión");
+    let c = contact.unwrap();
+
+    // Normal debe apuntar hacia afuera desde el centro del obstáculo (+Z)
+    assert!((c.normal.z - 1.0).abs() < 1e-4);
+    assert!(
+        (c.impact_speed - 10.0).abs() < 1e-4,
+        "Velocidad de impacto entrante debe ser 10.0"
+    );
+
+    // Posición corregida en el radio combinado 10.6
+    assert!((ship_pos.z - 10.6).abs() < 1e-4);
+
+    // Velocidad tangencial en X (2.0) debe preservarse
+    assert!((ship_vel.x - 2.0).abs() < 1e-4);
+
+    // Velocidad en Z con restitución e = 0.5: -10.0 - 1.0 * (-10.0 * 1.5) = +5.0
+    assert!(
+        (ship_vel.z - 5.0).abs() < 1e-4,
+        "Velocidad tras rebote elástico parcial debe ser +5.0"
+    );
+}
+
+#[test]
+fn test_resolve_sphere_collision_rebound_zero_is_inelastic() {
+    use space_travel::physics::{CollisionSphere, resolve_sphere_collision_with_rebound};
+
+    let obstacle = CollisionSphere::new(Vec3::zero(), 10.0);
+    let mut ship_pos = Vec3::new(0.0, 0.0, 9.0);
+    let mut ship_vel = Vec3::new(3.0, 0.0, -8.0);
+    let ship_radius = 0.6;
+
+    let contact = resolve_sphere_collision_with_rebound(
+        &mut ship_pos,
+        &mut ship_vel,
+        ship_radius,
+        obstacle,
+        0.0,
+    );
+
+    assert!(contact.is_some());
+    // Con e = 0.0, la velocidad normal entrante se vuelve exactamente 0.0 (deslizamiento tangencial puro)
+    assert!(ship_vel.z.abs() < 1e-5);
+    assert!((ship_vel.x - 3.0).abs() < 1e-4);
+}
+
+#[test]
+fn test_resolve_sphere_collision_with_rebound_separating_velocity() {
+    use space_travel::physics::{CollisionSphere, resolve_sphere_collision_with_rebound};
+
+    let obstacle = CollisionSphere::new(Vec3::zero(), 10.0);
+    // Nave penetrando a distancia 9.5 con radio 0.6, pero su velocidad ya apunta hacia afuera (+Z)
+    let mut ship_pos = Vec3::new(0.0, 0.0, 9.5);
+    let mut ship_vel = Vec3::new(2.0, 0.0, 5.0); // inward_speed = +5.0 (separándose)
+    let ship_radius = 0.6;
+
+    let contact = resolve_sphere_collision_with_rebound(
+        &mut ship_pos,
+        &mut ship_vel,
+        ship_radius,
+        obstacle,
+        0.70,
+    );
+
+    assert!(contact.is_some());
+    let c = contact.unwrap();
+    // La velocidad de impacto entrante es 0.0 porque ya se estaba separando
+    assert_eq!(c.impact_speed, 0.0);
+    // La posición es corregida a la superficie (10.6)
+    assert!((ship_pos.z - 10.6).abs() < 1e-4);
+    // La velocidad saliente no debe ser alterada
+    assert!((ship_vel.z - 5.0).abs() < 1e-4);
+    assert!((ship_vel.x - 2.0).abs() < 1e-4);
+}
