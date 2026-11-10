@@ -56,6 +56,7 @@ fn kirby_composite_radius_fits_approved_collision_sphere() {
 
     let body = CelestialBody {
         id: "kirby".to_string(),
+        parent_id: None,
         mesh: platform.clone(),
         material: platform.material.clone(),
         scale,
@@ -85,10 +86,63 @@ fn kirby_composite_radius_fits_approved_collision_sphere() {
 }
 
 #[test]
+fn homero_composite_radius_fits_approved_collision_sphere() {
+    let mut loaded =
+        Mesh::load_models_from_obj(Path::new("assets/models/homer/homero.obj")).unwrap();
+    let primary = loaded.remove(0);
+    let mut auto_components = Vec::new();
+    for (idx, sub_mesh) in loaded.into_iter().enumerate() {
+        auto_components.push(CelestialComponent::new(
+            format!("homero_part_{}", idx + 1),
+            Arc::new(sub_mesh),
+        ));
+    }
+    let mut max_geo_radius = primary.geometric_radius();
+    for comp in &auto_components {
+        max_geo_radius = max_geo_radius.max(comp.origin_radius);
+    }
+    let radius = 8.0;
+    let collision_margin = 1.0;
+    let scale = radius / max_geo_radius.max(1e-4);
+
+    let body = CelestialBody {
+        id: "homero".to_string(),
+        parent_id: Some("dona".to_string()),
+        mesh: Arc::new(primary),
+        material: Material::default_diffuse(),
+        scale,
+        radius,
+        collision_margin,
+        orbital_radius: 80.0,
+        orbital_period: 45.0,
+        rotation_period: 20.0,
+        initial_orbital_angle_rad: 0.0,
+        position: Vec3::zero(),
+        rotation_rad: 0.0,
+        shader_type: "diffuse".to_string(),
+        surface_groups: Vec::new(),
+        debris_rings: Vec::new(),
+        components: auto_components,
+        thruster_flames: Vec::new(),
+        moons: Vec::new(),
+        gravity_strength: 5.0,
+        gravity_radius: 16.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
+    };
+
+    assert_eq!(body.components.len(), 4);
+    assert!(body.composite_radius() <= body.radius + body.collision_margin);
+    assert!((body.composite_radius() - body.radius).abs() < 1e-4);
+}
+
+#[test]
 fn shared_parent_matrix_preserves_component_assembly() {
     let mesh = Arc::new(Mesh::new(Vec::new(), Vec::new()));
     let mut body = CelestialBody {
         id: "compuesto".to_string(),
+        parent_id: None,
         mesh: mesh.clone(),
         material: Material::default_diffuse(),
         scale: 2.0,

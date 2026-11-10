@@ -241,70 +241,222 @@ impl Mesh {
         }
 
         // Carga y resolución del material asociado
-        let material = if let (Ok(materials), Some(mat_id)) = (materials_res, primary_mat_id) {
-            if let Some(tmat) = materials.get(mat_id) {
-                let parent_dir = path.parent().unwrap_or(Path::new(""));
-                let texture = if let Some(ref tex_file) = tmat.diffuse_texture {
-                    let tex_path = parent_dir.join(tex_file);
-                    match CpuTexture::load_from_file(&tex_path) {
-                        Ok(tex) => Some(Arc::new(tex)),
-                        Err(e) => {
-                            eprintln!(
-                                "[WARN] No se pudo cargar textura '{}' referenciada en MTL: {}",
-                                tex_path.display(),
-                                e
-                            );
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                // Detección y carga de textura de normales (Normal Map)
-                let normal_texture = if let Some(ref norm_file) = tmat.normal_texture {
-                    let norm_path = parent_dir.join(norm_file);
-                    match CpuTexture::load_from_file(&norm_path) {
-                        Ok(tex) => Some(Arc::new(tex)),
-                        Err(_) => None,
-                    }
-                } else if let Some(ref tex_file) = tmat.diffuse_texture {
-                    let stem = Path::new(tex_file)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("");
-                    let candidate = parent_dir.join(format!("{}_norm.png", stem));
-                    if candidate.exists() {
-                        CpuTexture::load_from_file(&candidate).ok().map(Arc::new)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-
-                // Si la malla cuenta con mapa de textura difuso, se utiliza Kd unitario para
-                // no atenuar ni distorsionar los colores de la textura con valores de interfaz residuales.
-                let kd = if texture.is_some() {
-                    Vec3::one()
-                } else {
-                    match tmat.diffuse {
-                        Some(diff) => Vec3::new(diff[0], diff[1], diff[2]),
-                        None => Vec3::one(),
-                    }
-                };
-
-                Material::with_normal_map(&tmat.name, kd, texture, normal_texture)
-            } else {
-                Material::default_diffuse()
-            }
-        } else {
-            Material::default_diffuse()
-        };
+        let parent_dir = path.parent().unwrap_or(Path::new(""));
+        let emissions = Self::load_mtl_emissions(path);
+        let material = Self::resolve_material(
+            materials_res.as_deref().ok(),
+            primary_mat_id,
+            &emissions,
+            parent_dir,
+        );
 
         let mut mesh = Self::with_material(all_vertices, all_indices, material);
         mesh.calculate_tangents();
         Ok(mesh)
+    }
+
+    /// Lee las declaraciones de emisión `Ke` desde los archivos MTL asociados al OBJ.
+    fn load_mtl_emissions(obj_path: &Path) -> HashMap<String, Vec3> {
+        let mut emissions = HashMap::new();
+        let parent_dir = obj_path.parent().unwrap_or(Path::new(""));
+
+        let mut mtl_paths = Vec::new();
+        if let Ok(content) = std::fs::read_to_string(obj_path) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if let Some(mtl_file) = trimmed.strip_prefix("mtllib ") {
+                    mtl_paths.push(parent_dir.join(mtl_file.trim()));
+                }
+            }
+        }
+        let default_mtl = obj_path.with_extension("mtl");
+        if mtl_paths.is_empty() && default_mtl.exists() {
+            mtl_paths.push(default_mtl);
+        }
+
+        for mtl_path in mtl_paths {
+            if let Ok(content) = std::fs::read_to_string(&mtl_path) {
+                let mut current_mat: Option<String> = None;
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if let Some(name) = trimmed.strip_prefix("newmtl ") {
+                        current_mat = Some(name.trim().to_string());
+                    } else if (trimmed.starts_with("Ke ") || trimmed.starts_with("ke "))
+                        && let Some(ref mat_name) = current_mat
+                    {
+                        let parts: Vec<f32> = trimmed[3..]
+                            .split_whitespace()
+                            .filter_map(|s| s.parse::<f32>().ok())
+                            .collect();
+                        if parts.len() >= 3 {
+                            emissions
+                                .insert(mat_name.clone(), Vec3::new(parts[0], parts[1], parts[2]));
+                        }
+                    }
+                }
+            }
+        }
+
+        emissions
+    }
+
+    /// Resuelve el material cargado desde un archivo MTL para un modelo o submalla específico.
+    fn resolve_material(
+        materials: Option<&[tobj::Material]>,
+        mat_id: Option<usize>,
+        emissions: &HashMap<String, Vec3>,
+        parent_dir: &Path,
+    ) -> Material {
+        if let (Some(materials), Some(id)) = (materials, mat_id)
+            && let Some(tmat) = materials.get(id)
+        {
+            let texture = if let Some(ref tex_file) = tmat.diffuse_texture {
+                let tex_path = parent_dir.join(tex_file);
+                match CpuTexture::load_from_file(&tex_path) {
+                    Ok(tex) => Some(Arc::new(tex)),
+                    Err(e) => {
+                        eprintln!(
+                            "[WARN] No se pudo cargar textura '{}' referenciada en MTL: {}",
+                            tex_path.display(),
+                            e
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            let normal_texture = if let Some(ref norm_file) = tmat.normal_texture {
+                let norm_path = parent_dir.join(norm_file);
+                match CpuTexture::load_from_file(&norm_path) {
+                    Ok(tex) => Some(Arc::new(tex)),
+                    Err(_) => None,
+                }
+            } else if let Some(ref tex_file) = tmat.diffuse_texture {
+                let stem = Path::new(tex_file)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                let candidate = parent_dir.join(format!("{}_norm.png", stem));
+                if candidate.exists() {
+                    CpuTexture::load_from_file(&candidate).ok().map(Arc::new)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let kd = if texture.is_some() {
+                Vec3::one()
+            } else {
+                match tmat.diffuse {
+                    Some(diff) => Vec3::new(diff[0], diff[1], diff[2]),
+                    None => Vec3::one(),
+                }
+            };
+
+            let ke = emissions.get(&tmat.name).copied().unwrap_or(Vec3::zero());
+
+            return Material::with_emission(&tmat.name, kd, ke, texture, normal_texture);
+        }
+        Material::default_diffuse()
+    }
+
+    /// Convierte un modelo individual de `tobj` en una estructura `Mesh` con su material y tangentes calculadas.
+    fn model_to_mesh(
+        model: &tobj::Model,
+        materials: Option<&[tobj::Material]>,
+        emissions: &HashMap<String, Vec3>,
+        parent_dir: &Path,
+    ) -> Option<Self> {
+        let tmesh = &model.mesh;
+        let num_positions = tmesh.positions.len() / 3;
+        if num_positions == 0 || tmesh.indices.len() < 3 {
+            return None;
+        }
+
+        let has_normals = !tmesh.normals.is_empty();
+        let has_uvs = !tmesh.texcoords.is_empty();
+
+        let mut vertices = Vec::with_capacity(num_positions);
+        for i in 0..num_positions {
+            let pos = Vec3::new(
+                tmesh.positions[i * 3],
+                tmesh.positions[i * 3 + 1],
+                tmesh.positions[i * 3 + 2],
+            );
+            let norm = if has_normals && (i * 3 + 2) < tmesh.normals.len() {
+                Vec3::new(
+                    tmesh.normals[i * 3],
+                    tmesh.normals[i * 3 + 1],
+                    tmesh.normals[i * 3 + 2],
+                )
+                .normalize()
+            } else {
+                Vec3::up()
+            };
+            let uv = if has_uvs && (i * 2 + 1) < tmesh.texcoords.len() {
+                Vec2::new(tmesh.texcoords[i * 2], tmesh.texcoords[i * 2 + 1])
+            } else {
+                Vec2::zero()
+            };
+            vertices.push(Vertex::new(pos, norm, uv));
+        }
+
+        if tmesh
+            .indices
+            .iter()
+            .any(|&idx| (idx as usize) >= vertices.len())
+        {
+            return None;
+        }
+
+        let material = Self::resolve_material(materials, tmesh.material_id, emissions, parent_dir);
+        let mut mesh = Self::with_material(vertices, tmesh.indices.clone(), material);
+        mesh.calculate_tangents();
+        Some(mesh)
+    }
+
+    /// Carga todos los modelos y submallas contenidos en un archivo OBJ, asociando
+    /// de manera genérica a cada submalla su material y texturas correspondientes definidos en el archivo MTL.
+    pub fn load_models_from_obj(path: &Path) -> Result<Vec<Self>, String> {
+        let load_options = tobj::LoadOptions {
+            triangulate: true,
+            single_index: true,
+            ..Default::default()
+        };
+
+        let obj = tobj::load_obj(path, &load_options);
+        let (models, materials_res) =
+            obj.map_err(|e| format!("Error al cargar OBJ {:?}: {}", path, e))?;
+
+        if models.is_empty() {
+            return Err(format!("El archivo OBJ {:?} no contiene modelos", path));
+        }
+
+        let parent_dir = path.parent().unwrap_or(Path::new(""));
+        let materials = materials_res.ok();
+        let emissions = Self::load_mtl_emissions(path);
+
+        let mut meshes = Vec::new();
+        for model in &models {
+            if let Some(mesh) =
+                Self::model_to_mesh(model, materials.as_deref(), &emissions, parent_dir)
+            {
+                meshes.push(mesh);
+            }
+        }
+
+        if meshes.is_empty() {
+            return Err(format!(
+                "El archivo OBJ {:?} no contiene geometría triangular utilizable",
+                path
+            ));
+        }
+
+        Ok(meshes)
     }
 
     /// Subdivide proceduralmente cada triángulo de la malla en 4 subtriángulos ($1 \to 4$),

@@ -1,6 +1,7 @@
 pub mod alien_energy;
 pub mod debug;
 pub mod diffuse;
+pub mod earth_like;
 pub mod force_field;
 pub mod normal_mapped;
 pub mod plasma;
@@ -17,6 +18,7 @@ use crate::math::{Vec2, Vec3};
 pub use alien_energy::AlienEnergyShader;
 pub use debug::{DepthDebugShader, NormalsDebugShader};
 pub use diffuse::{DiffuseShader, EmissiveShader, TexturedDiffuseShader};
+pub use earth_like::EarthLikeShader;
 pub use force_field::ForceFieldShader;
 pub use normal_mapped::NormalMappedShader;
 pub use plasma::PlasmaShader;

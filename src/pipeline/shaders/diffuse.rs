@@ -53,12 +53,19 @@ impl Default for DiffuseShader {
 impl FragmentShader for DiffuseShader {
     fn shade(&self, input: &FragmentInput<'_>) -> Color {
         let n = input.world_normal.normalize();
-        let n_dot_l = n.dot(self.light_dir).max(0.0);
+        // Iluminación bilateral (double-sided) para celosías y vigas abiertas
+        let n_dot_l = n.dot(self.light_dir).abs();
         let lighting =
             (self.ambient_intensity + n_dot_l * (1.0 - self.ambient_intensity)).clamp(0.0, 1.0);
 
         let kd = input.material.kd;
-        Color::from_f32(kd.x * lighting, kd.y * lighting, kd.z * lighting, 1.0)
+        let ke = input.material.ke;
+        Color::from_f32(
+            (kd.x * lighting + ke.x).clamp(0.0, 1.0),
+            (kd.y * lighting + ke.y).clamp(0.0, 1.0),
+            (kd.z * lighting + ke.z).clamp(0.0, 1.0),
+            1.0,
+        )
     }
 }
 
@@ -98,9 +105,10 @@ impl FragmentShader for TexturedDiffuseShader {
         };
 
         let kd = input.material.kd;
-        let r = (tex_color.r as f32 / 255.0) * kd.x * lighting;
-        let g = (tex_color.g as f32 / 255.0) * kd.y * lighting;
-        let b = (tex_color.b as f32 / 255.0) * kd.z * lighting;
+        let ke = input.material.ke;
+        let r = ((tex_color.r as f32 / 255.0) * kd.x * lighting + ke.x).clamp(0.0, 1.0);
+        let g = ((tex_color.g as f32 / 255.0) * kd.y * lighting + ke.y).clamp(0.0, 1.0);
+        let b = ((tex_color.b as f32 / 255.0) * kd.z * lighting + ke.z).clamp(0.0, 1.0);
 
         Color::from_f32(r, g, b, 1.0)
     }

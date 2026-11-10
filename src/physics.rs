@@ -15,19 +15,33 @@ impl CollisionSphere {
     }
 }
 
-/// Resuelve una penetración entre una entidad móvil y un obstáculo esférico.
-/// Conserva la velocidad tangencial y elimina solo la componente que entra.
-pub fn resolve_sphere_collision(
+/// Información de contacto detallada producida al resolver una colisión física.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CollisionContact {
+    /// Punto de impacto en la superficie del obstáculo en coordenadas de mundo.
+    pub point: Vec3,
+    /// Normal de colisión unitaria que apunta hacia afuera del obstáculo.
+    pub normal: Vec3,
+    /// Magnitud de la velocidad perpendicular con la que la entidad impactó antes del rebote.
+    pub impact_speed: f32,
+}
+
+/// Resuelve una penetración entre una entidad móvil y un obstáculo esférico con restitución (rebote/retroceso).
+///
+/// Si `restitution > 0.0`, la velocidad perpendicular se invierte proporcionalmente amortiguada.
+/// Retorna `Some(CollisionContact)` si existió colisión y penetración.
+pub fn resolve_sphere_collision_with_rebound(
     position: &mut Vec3,
     velocity: &mut Vec3,
     entity_radius: f32,
     obstacle: CollisionSphere,
-) -> bool {
+    restitution: f32,
+) -> Option<CollisionContact> {
     let effective_radius = obstacle.radius + entity_radius;
     let delta = *position - obstacle.center;
     let distance = delta.length();
     if distance >= effective_radius {
-        return false;
+        return None;
     }
 
     let normal = if distance > 1e-6 {
@@ -38,10 +52,31 @@ pub fn resolve_sphere_collision(
     *position = obstacle.center + normal * effective_radius;
 
     let inward_speed = velocity.dot(normal);
-    if inward_speed < 0.0 {
-        *velocity -= normal * inward_speed;
-    }
-    true
+    let impact_speed = if inward_speed < 0.0 {
+        let e = restitution.clamp(0.0, 1.0);
+        // Rebote físico: retroceso en la dirección normal de la superficie
+        *velocity -= normal * (inward_speed * (1.0 + e));
+        -inward_speed
+    } else {
+        0.0
+    };
+
+    Some(CollisionContact {
+        point: obstacle.center + normal * obstacle.radius,
+        normal,
+        impact_speed,
+    })
+}
+
+/// Resuelve una penetración entre una entidad móvil y un obstáculo esférico sin restitución (deslizamiento inelástico puro).
+pub fn resolve_sphere_collision(
+    position: &mut Vec3,
+    velocity: &mut Vec3,
+    entity_radius: f32,
+    obstacle: CollisionSphere,
+) -> bool {
+    resolve_sphere_collision_with_rebound(position, velocity, entity_radius, obstacle, 0.0)
+        .is_some()
 }
 
 /// Estado de entrada del usuario para el control de la nave.

@@ -189,6 +189,7 @@ fn test_ship_orientation_and_forward_vector() {
 fn test_orbital_mechanics_deterministic() {
     let mut body = CelestialBody {
         id: "rocoso".to_string(),
+        parent_id: None,
         mesh: Arc::new(Mesh::new(vec![], vec![])),
         material: Material::default_diffuse(),
         scale: 1.0,
@@ -237,6 +238,7 @@ fn test_orbital_mechanics_deterministic() {
 fn test_celestial_body_model_and_rotation_matrices() {
     let mut body = CelestialBody {
         id: "rocoso".to_string(),
+        parent_id: None,
         mesh: Arc::new(Mesh::new(vec![], vec![])),
         material: Material::default_diffuse(),
         scale: 2.0,
@@ -284,4 +286,174 @@ fn test_celestial_body_model_and_rotation_matrices() {
     assert!((transformed_pt.x - (body.position.x + 2.0)).abs() < 1e-4);
     assert!((transformed_pt.y - body.position.y).abs() < 1e-4);
     assert!((transformed_pt.z - body.position.z).abs() < 1e-4);
+}
+
+#[test]
+fn test_resolve_sphere_collision_with_rebound() {
+    use space_travel::physics::{CollisionSphere, resolve_sphere_collision_with_rebound};
+
+    let obstacle = CollisionSphere::new(Vec3::zero(), 10.0);
+    let mut ship_pos = Vec3::new(0.0, 0.0, 9.5); // penetración de 1.1 con radio 0.6
+    let mut ship_vel = Vec3::new(2.0, 0.0, -10.0); // moviéndose hacia el centro en -Z
+    let ship_radius = 0.6;
+    let restitution = 0.5;
+
+    let contact = resolve_sphere_collision_with_rebound(
+        &mut ship_pos,
+        &mut ship_vel,
+        ship_radius,
+        obstacle,
+        restitution,
+    );
+
+    assert!(contact.is_some(), "Debe detectar contacto y colisión");
+    let c = contact.unwrap();
+
+    // Normal debe apuntar hacia afuera desde el centro del obstáculo (+Z)
+    assert!((c.normal.z - 1.0).abs() < 1e-4);
+    assert!(
+        (c.impact_speed - 10.0).abs() < 1e-4,
+        "Velocidad de impacto entrante debe ser 10.0"
+    );
+
+    // Posición corregida en el radio combinado 10.6
+    assert!((ship_pos.z - 10.6).abs() < 1e-4);
+
+    // Velocidad tangencial en X (2.0) debe preservarse
+    assert!((ship_vel.x - 2.0).abs() < 1e-4);
+
+    // Velocidad en Z con restitución e = 0.5: -10.0 - 1.0 * (-10.0 * 1.5) = +5.0
+    assert!(
+        (ship_vel.z - 5.0).abs() < 1e-4,
+        "Velocidad tras rebote elástico parcial debe ser +5.0"
+    );
+}
+
+#[test]
+fn test_resolve_sphere_collision_rebound_zero_is_inelastic() {
+    use space_travel::physics::{CollisionSphere, resolve_sphere_collision_with_rebound};
+
+    let obstacle = CollisionSphere::new(Vec3::zero(), 10.0);
+    let mut ship_pos = Vec3::new(0.0, 0.0, 9.0);
+    let mut ship_vel = Vec3::new(3.0, 0.0, -8.0);
+    let ship_radius = 0.6;
+
+    let contact = resolve_sphere_collision_with_rebound(
+        &mut ship_pos,
+        &mut ship_vel,
+        ship_radius,
+        obstacle,
+        0.0,
+    );
+
+    assert!(contact.is_some());
+    // Con e = 0.0, la velocidad normal entrante se vuelve exactamente 0.0 (deslizamiento tangencial puro)
+    assert!(ship_vel.z.abs() < 1e-5);
+    assert!((ship_vel.x - 3.0).abs() < 1e-4);
+}
+
+#[test]
+fn test_resolve_sphere_collision_with_rebound_separating_velocity() {
+    use space_travel::physics::{CollisionSphere, resolve_sphere_collision_with_rebound};
+
+    let obstacle = CollisionSphere::new(Vec3::zero(), 10.0);
+    // Nave penetrando a distancia 9.5 con radio 0.6, pero su velocidad ya apunta hacia afuera (+Z)
+    let mut ship_pos = Vec3::new(0.0, 0.0, 9.5);
+    let mut ship_vel = Vec3::new(2.0, 0.0, 5.0); // inward_speed = +5.0 (separándose)
+    let ship_radius = 0.6;
+
+    let contact = resolve_sphere_collision_with_rebound(
+        &mut ship_pos,
+        &mut ship_vel,
+        ship_radius,
+        obstacle,
+        0.70,
+    );
+
+    assert!(contact.is_some());
+    let c = contact.unwrap();
+    // La velocidad de impacto entrante es 0.0 porque ya se estaba separando
+    assert_eq!(c.impact_speed, 0.0);
+    // La posición es corregida a la superficie (10.6)
+    assert!((ship_pos.z - 10.6).abs() < 1e-4);
+    // La velocidad saliente no debe ser alterada
+    assert!((ship_vel.z - 5.0).abs() < 1e-4);
+    assert!((ship_vel.x - 2.0).abs() < 1e-4);
+}
+
+#[test]
+fn test_moon_orbital_mechanics_relative_to_parent() {
+    let mut parent = CelestialBody {
+        id: "dona".to_string(),
+        parent_id: None,
+        mesh: Arc::new(Mesh::new(vec![], vec![])),
+        material: Material::default_diffuse(),
+        scale: 1.0,
+        radius: 45.0,
+        collision_margin: 1.0,
+        orbital_radius: 450.0,
+        orbital_period: 400.0,
+        rotation_period: 40.0,
+        initial_orbital_angle_rad: 0.0,
+        position: Vec3::zero(),
+        rotation_rad: 0.0,
+        shader_type: "diffuse".to_string(),
+        surface_groups: Vec::new(),
+        debris_rings: Vec::new(),
+        components: Vec::new(),
+        thruster_flames: Vec::new(),
+        moons: Vec::new(),
+        gravity_strength: 0.0,
+        gravity_radius: 50.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
+    };
+
+    let mut moon = CelestialBody {
+        id: "homero".to_string(),
+        parent_id: Some("dona".to_string()),
+        mesh: Arc::new(Mesh::new(vec![], vec![])),
+        material: Material::default_diffuse(),
+        scale: 1.0,
+        radius: 8.0,
+        collision_margin: 1.0,
+        orbital_radius: 80.0,
+        orbital_period: 40.0,
+        rotation_period: 20.0,
+        initial_orbital_angle_rad: 0.0,
+        position: Vec3::zero(),
+        rotation_rad: 0.0,
+        shader_type: "diffuse".to_string(),
+        surface_groups: Vec::new(),
+        debris_rings: Vec::new(),
+        components: Vec::new(),
+        thruster_flames: Vec::new(),
+        moons: Vec::new(),
+        gravity_strength: 0.0,
+        gravity_radius: 12.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
+    };
+
+    // t = 0: Padre en (450, 0, 0), Luna a +80 en X del padre -> (530, 0, 0)
+    parent.update(0.0);
+    moon.update_with_parent_position(0.0, parent.position);
+    assert!((parent.position.x - 450.0).abs() < 1e-4);
+    assert!((moon.position.x - 530.0).abs() < 1e-4);
+    assert!(moon.position.z.abs() < 1e-4);
+    assert!(((moon.position - parent.position).length() - 80.0).abs() < 1e-4);
+
+    // t = 10s: Luna ha recorrido T_luna / 4 (90° alrededor del padre)
+    // El padre se ha movido según su propia órbita
+    parent.update(10.0);
+    moon.update_with_parent_position(10.0, parent.position);
+    let relative_pos = moon.position - parent.position;
+    assert!(
+        (relative_pos.length() - 80.0).abs() < 1e-4,
+        "La distancia orbital al padre debe conservarse exactamente"
+    );
+    assert!(relative_pos.x.abs() < 1e-4);
+    assert!((relative_pos.z - 80.0).abs() < 1e-4);
 }

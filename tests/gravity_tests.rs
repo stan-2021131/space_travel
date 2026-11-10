@@ -153,6 +153,7 @@ fn test_gravity_no_singularity_at_surface() {
 fn test_planet_effective_gravity_radius_default_and_explicit() {
     let p_default = PlanetConfig {
         id: "p_def".to_string(),
+        parent_id: None,
         mesh_type: "model".to_string(),
         model_path: "dummy.obj".to_string(),
         subdivisions: 0,

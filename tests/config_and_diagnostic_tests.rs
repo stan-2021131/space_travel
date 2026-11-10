@@ -31,7 +31,34 @@ fn test_valid_configuration_loading() {
     assert!(config.enemies.supervising_distance > config.enemies.preferred_distance);
     assert!(config.sun.radius > 0.0);
     assert!(!config.planets.is_empty());
-    assert_eq!(config.planets[0].id, "rocoso");
+    let rocoso = config
+        .planets
+        .iter()
+        .find(|planet| planet.id == "rocoso")
+        .expect("Debe existir el planeta rocoso");
+    assert_eq!(rocoso.shader, "normal_mapped");
+
+    let tierra = config
+        .planets
+        .iter()
+        .find(|planet| planet.id == "tierra")
+        .expect("Debe existir el planeta tierra");
+    assert_eq!(tierra.shader, "earth_like");
+    assert_eq!(
+        tierra.surface_objects.len(),
+        5,
+        "Debe tener los 5 tipos de objetos de árboles y ciudad"
+    );
+    for obj in &tierra.surface_objects {
+        assert!(
+            obj.max_distance <= 40.0,
+            "Los objetos de corteza de la Tierra deben tener distancia de descarte <= 40.0 para rendimiento en CPU"
+        );
+        assert!(
+            obj.fade_range <= 15.0,
+            "El rango de transición debe ser suave y proporcionado"
+        );
+    }
     let destroyed = config
         .planets
         .iter()
@@ -50,6 +77,21 @@ fn test_valid_configuration_loading() {
     assert_eq!(kirby.moons.len(), 1);
     assert_eq!(kirby.gravity_strength, 8.0);
     assert_eq!(kirby.radius + kirby.collision_margin, 13.5);
+
+    let homero = config
+        .planets
+        .iter()
+        .find(|planet| planet.id == "homero")
+        .expect("Debe existir el cuerpo Homero como luna");
+    assert_eq!(homero.parent_id.as_deref(), Some("dona"));
+    assert!(
+        homero.radius < 45.0,
+        "Homero debe ser más pequeño que el planeta dona"
+    );
+    assert!(
+        homero.orbital_radius > 45.0,
+        "La órbita de Homero debe ser exterior a la dona"
+    );
 }
 
 #[test]
@@ -101,6 +143,45 @@ fn test_invalid_configuration_rejections() {
     let mut bad_attack_speed = valid.clone();
     bad_attack_speed.enemies.attacking_speed_ratio = 1.1;
     assert!(bad_attack_speed.validate(Path::new("test.toml")).is_err());
+
+    // Luna con órbita que intersecta a su planeta padre
+    let mut bad_moon_orbit = valid.clone();
+    let moon = bad_moon_orbit
+        .planets
+        .iter_mut()
+        .find(|p| p.id == "homero")
+        .unwrap();
+    moon.orbital_radius = 20.0; // Menor que el radio de la dona (45.0)
+    assert!(bad_moon_orbit.validate(Path::new("test.toml")).is_err());
+
+    // Luna con planeta padre inexistente
+    let mut bad_moon_parent = valid.clone();
+    let moon2 = bad_moon_parent
+        .planets
+        .iter_mut()
+        .find(|p| p.id == "homero")
+        .unwrap();
+    moon2.parent_id = Some("planeta_fantasma".to_string());
+    assert!(bad_moon_parent.validate(Path::new("test.toml")).is_err());
+
+    // Luna con auto-referencia (su propio padre)
+    let mut bad_moon_self = valid.clone();
+    let moon_self = bad_moon_self
+        .planets
+        .iter_mut()
+        .find(|p| p.id == "homero")
+        .unwrap();
+    moon_self.parent_id = Some("homero".to_string());
+    assert!(bad_moon_self.validate(Path::new("test.toml")).is_err());
+
+    // Luna cuyo astro padre es a su vez una luna
+    let mut bad_nested_moon = valid.clone();
+    let mut sub_moon = valid.planets[0].clone();
+    sub_moon.id = "sub_luna".to_string();
+    sub_moon.parent_id = Some("homero".to_string());
+    sub_moon.orbital_radius = 50.0;
+    bad_nested_moon.planets.push(sub_moon);
+    assert!(bad_nested_moon.validate(Path::new("test.toml")).is_err());
 
     let mut bad_approach_speed = valid.clone();
     bad_approach_speed.enemies.approaching_speed_ratio =

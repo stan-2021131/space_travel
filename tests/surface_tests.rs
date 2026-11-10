@@ -398,7 +398,7 @@ fn test_toml_donut_planet_parsing() {
 
     assert_eq!(dona.model_path, "assets/models/donut/donut_8.obj");
     assert!((dona.radius - 45.0).abs() < 1e-4);
-    assert!((dona.orbital_radius - 320.0).abs() < 1e-4);
+    assert!((dona.orbital_radius - 450.0).abs() < 1e-4);
     assert!((dona.axial_tilt_deg - 30.0).abs() < 1e-4);
     assert!(dona.visible_gravity, "Debe tener campo de fuerza visible");
     assert_eq!(
@@ -450,4 +450,40 @@ fn test_surface_groups_seed_divergence() {
         "Distintos grupos de superficie deben ocupar posiciones separadas en la dona: dist={}",
         dist
     );
+}
+
+#[test]
+fn test_trees_and_city_surface_models_load_and_distribute() {
+    let models = [
+        ("Oak", "assets/models/objects/trees/Oak_Tree_Summer.obj"),
+        ("Pine", "assets/models/objects/trees/Pine_Tree_2_Summer.obj"),
+        ("House", "assets/models/objects/city/house.obj"),
+        ("Building", "assets/models/objects/city/building.obj"),
+        ("Factory", "assets/models/objects/city/factory.obj"),
+    ];
+
+    let planet_radius = 16.0;
+    let seed = 67;
+
+    for (name, path) in models {
+        let mesh = Mesh::load_from_obj(Path::new(path))
+            .unwrap_or_else(|e| panic!("Error cargando modelo {}: {}", name, e));
+        assert!(mesh.vertex_count() > 0 && mesh.triangle_count() > 0);
+
+        let scale = 0.18;
+        let embedding = calculate_surface_embedding(planet_radius, &mesh.aabb, scale);
+        assert!(embedding >= 0.0, "El enraizamiento debe ser no negativo");
+
+        let eff_radius = planet_radius - embedding;
+        let instances = generate_spherical_distribution(seed, 6, eff_radius, scale);
+        assert_eq!(instances.len(), 6);
+
+        for inst in &instances {
+            let dist = inst.local_pos.length();
+            assert!(
+                (dist - eff_radius).abs() < 1e-3,
+                "Instancia debe ubicarse exactamente en el radio esférico efectivo"
+            );
+        }
+    }
 }

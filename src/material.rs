@@ -8,6 +8,8 @@ pub struct Material {
     pub name: String,
     /// Color reflectivo difuso Kd en formato [0.0, 1.0].
     pub kd: Vec3,
+    /// Color emisivo Ke para superficies autoiluminadas en formato [0.0, +inf).
+    pub ke: Vec3,
     /// Textura difusa opcional cargada en RAM.
     pub texture: Option<Arc<CpuTexture>>,
     /// Textura de normales opcional (Normal Map) en espacio tangente.
@@ -19,6 +21,7 @@ impl Material {
         Self {
             name: name.into(),
             kd,
+            ke: Vec3::zero(),
             texture,
             normal_texture: None,
         }
@@ -33,6 +36,23 @@ impl Material {
         Self {
             name: name.into(),
             kd,
+            ke: Vec3::zero(),
+            texture,
+            normal_texture,
+        }
+    }
+
+    pub fn with_emission(
+        name: impl Into<String>,
+        kd: Vec3,
+        ke: Vec3,
+        texture: Option<Arc<CpuTexture>>,
+        normal_texture: Option<Arc<CpuTexture>>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            kd,
+            ke,
             texture,
             normal_texture,
         }
@@ -43,6 +63,7 @@ impl Material {
         Self {
             name: "DefaultMaterial".to_string(),
             kd: Vec3::new(0.85, 0.85, 0.90),
+            ke: Vec3::zero(),
             texture: None,
             normal_texture: None,
         }
@@ -52,6 +73,7 @@ impl Material {
         Self {
             name: name.into(),
             kd,
+            ke: Vec3::zero(),
             texture: Some(texture),
             normal_texture: None,
         }

@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub camera: CameraConfig,
     pub sun: SunConfig,
     pub planets: Vec<PlanetConfig>,
+    #[serde(default)]
+    pub dyson_sphere: Option<DysonSphereConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -202,6 +204,44 @@ pub struct DebrisRingConfig {
     pub collision_margin: f32,
 }
 
+fn default_dyson_enabled() -> bool {
+    true
+}
+
+fn default_dyson_rotation_speed() -> f32 {
+    0.025
+}
+
+fn default_dyson_gravity_strength() -> f32 {
+    6.0
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DysonSphereConfig {
+    #[serde(default = "default_dyson_enabled")]
+    pub enabled: bool,
+    pub model_path: String,
+    pub radius: f32,
+    #[serde(default = "default_dyson_rotation_speed")]
+    pub rotation_speed: f32,
+    #[serde(default)]
+    pub collision_radius: Option<f32>,
+    #[serde(default)]
+    pub gravity_radius: Option<f32>,
+    #[serde(default = "default_dyson_gravity_strength")]
+    pub gravity_strength: f32,
+}
+
+impl DysonSphereConfig {
+    pub fn effective_collision_radius(&self) -> f32 {
+        self.collision_radius.unwrap_or(self.radius)
+    }
+
+    pub fn effective_gravity_radius(&self) -> f32 {
+        self.gravity_radius.unwrap_or(self.radius * 1.45)
+    }
+}
+
 fn default_surface_count() -> usize {
     6
 }
@@ -221,6 +261,8 @@ fn default_surface_fade_range() -> f32 {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PlanetConfig {
     pub id: String,
+    #[serde(default)]
+    pub parent_id: Option<String>,
     #[serde(default = "default_mesh_type")]
     pub mesh_type: String,
     pub model_path: String,
@@ -440,7 +482,34 @@ impl AppConfig {
                     p, planet.id
                 ));
             }
-            if planet.orbital_radius <= self.sun.radius {
+            if let Some(ref pid) = planet.parent_id {
+                if pid == &planet.id {
+                    return Err(format!(
+                        "[{}] El cuerpo celeste '{}' no puede ser su propio padre orbital",
+                        p, planet.id
+                    ));
+                }
+                let parent = self.planets.iter().find(|p| &p.id == pid);
+                if let Some(parent) = parent {
+                    if parent.parent_id.is_some() {
+                        return Err(format!(
+                            "[{}] El astro padre '{}' de la luna '{}' no puede ser a su vez una luna dependiente",
+                            p, parent.id, planet.id
+                        ));
+                    }
+                    if planet.orbital_radius <= parent.radius {
+                        return Err(format!(
+                            "[{}] Órbita de la luna '{}' ({}) colisiona con su astro padre '{}' (radio {})",
+                            p, planet.id, planet.orbital_radius, parent.id, parent.radius
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "[{}] Planeta padre '{}' referenciado por luna '{}' no existe en la configuración",
+                        p, pid, planet.id
+                    ));
+                }
+            } else if planet.orbital_radius <= self.sun.radius {
                 return Err(format!(
                     "[{}] Órbita de '{}' ({}) colisiona con el Sol (radio {})",
                     p, planet.id, planet.orbital_radius, self.sun.radius
@@ -555,6 +624,29 @@ impl AppConfig {
                         p, planet.id
                     ));
                 }
+            }
+        }
+
+        if let Some(ref dyson) = self.dyson_sphere
+            && dyson.enabled
+        {
+            if !dyson.radius.is_finite() || dyson.radius <= 0.0 {
+                return Err(format!(
+                    "[{}] Radio de la Esfera de Dyson debe ser finito y mayor a 0",
+                    p
+                ));
+            }
+            if dyson.model_path.trim().is_empty() {
+                return Err(format!(
+                    "[{}] model_path de la Esfera de Dyson no puede estar vacío",
+                    p
+                ));
+            }
+            if !dyson.gravity_strength.is_finite() || dyson.gravity_strength < 0.0 {
+                return Err(format!(
+                    "[{}] Gravedad de la Esfera de Dyson debe ser finita y no negativa",
+                    p
+                ));
             }
         }
 

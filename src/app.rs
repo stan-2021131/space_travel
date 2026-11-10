@@ -9,17 +9,19 @@ use crate::hud::{
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
+use crate::particles::SparkSystem;
 use crate::physics::{
-    CollisionSphere, ShipInput, ShipState, resolve_sphere_collision, solar_damage_per_second,
+    CollisionSphere, ShipInput, ShipState, resolve_sphere_collision_with_rebound,
+    solar_damage_per_second,
 };
 use crate::pipeline::{
-    AlienEnergyShader, BlendMode, DepthDebugShader, EmissiveShader, ForceFieldShader,
-    FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
-    RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
-    TexturedDiffuseShader, ThrusterFlameShader, ToonShader,
+    AlienEnergyShader, BlendMode, DepthDebugShader, DiffuseShader, EarthLikeShader, EmissiveShader,
+    ForceFieldShader, FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader,
+    ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader,
+    SoftwareRenderer, TexturedDiffuseShader, ThrusterFlameShader, ToonShader,
 };
 use crate::scene::{
-    CelestialBody, CelestialComponent, DebrisRing, Moon, ThrusterFlame,
+    CelestialBody, CelestialComponent, DebrisRing, DysonSphere, Moon, ThrusterFlame,
     surface::{
         SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
         generate_spherical_distribution, generate_torus_surface_distribution,
@@ -51,8 +53,10 @@ pub struct App {
     ship_thruster_flames: Vec<ThrusterFlame>,
     thruster_flame_material: Material,
     pub combat: CombatSystem,
+    pub sparks: SparkSystem,
 
     sun_body: CelestialBody,
+    pub dyson_sphere: Option<DysonSphere>,
     planets: Vec<CelestialBody>,
 
     // Estado de simulación
@@ -63,12 +67,16 @@ pub struct App {
     pub local_flight_mode: bool,
     pub nearby_planet_idx: Option<usize>,
     ship_thrust_state: f32,
+    pub impact_shake_timer: f32,
+    pub impact_shake_intensity: f32,
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
     normal_mapped_shader: NormalMappedShader,
     rock_shader: ProceduralRockShader,
+    earth_shader: EarthLikeShader,
     plasma_shader: PlasmaShader,
+    diffuse_shader: DiffuseShader,
     force_field_shader: ForceFieldShader,
     ship_shader: ShipShader,
     enemy_shader: AlienEnergyShader,
@@ -142,6 +150,7 @@ impl App {
 
         let sun_body = CelestialBody {
             id: config.sun.id.clone(),
+            parent_id: None,
             material: sun_mesh.material.clone(),
             mesh: sun_mesh,
             scale: sun_scale,
@@ -166,8 +175,34 @@ impl App {
             gravity_mesh: sun_grav_mesh,
         };
 
+        // 1.b Esfera de Dyson (si está habilitada en la configuración)
+        let dyson_sphere = if let Some(ref d_cfg) = config.dyson_sphere {
+            if d_cfg.enabled {
+                println!(
+                    "[RECURSOS] Cargando modelo de Esfera de Dyson: {}",
+                    d_cfg.model_path
+                );
+                let dyson_submeshes = Mesh::load_models_from_obj(Path::new(&d_cfg.model_path))?;
+                let dyson_meshes = dyson_submeshes.into_iter().map(Arc::new).collect();
+
+                Some(DysonSphere::new(
+                    dyson_meshes,
+                    d_cfg.radius,
+                    d_cfg.rotation_speed,
+                    d_cfg.effective_collision_radius(),
+                    d_cfg.effective_gravity_radius(),
+                    d_cfg.gravity_strength,
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut planets = Vec::new();
         for (planet_index, p_cfg) in config.planets.iter().enumerate() {
+            let mut auto_components = Vec::new();
             let mut mesh = if p_cfg.mesh_type == "icosphere" {
                 println!(
                     "[PROCEDURAL] Generando esfera geodésica para '{}' (radio: {}, subdiv: {})",
@@ -179,12 +214,21 @@ impl App {
                     "[RECURSOS] Cargando cuerpo celeste '{}': {}",
                     p_cfg.id, p_cfg.model_path
                 );
-                let mut m = Mesh::load_from_obj(Path::new(&p_cfg.model_path))?;
-                // Subdivisión procedural de geometría previa a rasterizar (+10 pts)
+                let mut loaded_models = Mesh::load_models_from_obj(Path::new(&p_cfg.model_path))?;
+                let mut primary_mesh = loaded_models.remove(0);
                 for _ in 0..p_cfg.subdivisions {
-                    m.subdivide();
+                    primary_mesh.subdivide();
                 }
-                m
+                for (sub_idx, mut sub_mesh) in loaded_models.into_iter().enumerate() {
+                    for _ in 0..p_cfg.subdivisions {
+                        sub_mesh.subdivide();
+                    }
+                    auto_components.push(CelestialComponent::new(
+                        format!("{}_part_{}", p_cfg.id, sub_idx + 1),
+                        Arc::new(sub_mesh),
+                    ));
+                }
+                primary_mesh
             };
 
             // Deformación geométrica por ruido con semilla universal (+10 pts)
@@ -203,7 +247,11 @@ impl App {
                 );
             }
 
-            let geo_radius = mesh.geometric_radius().max(1e-4);
+            let mut max_geo_radius = mesh.geometric_radius();
+            for comp in &auto_components {
+                max_geo_radius = max_geo_radius.max(comp.origin_radius);
+            }
+            let geo_radius = max_geo_radius.max(1e-4);
             let p_scale = p_cfg.radius / geo_radius;
             let p_mesh = Arc::new(mesh);
 
@@ -289,7 +337,8 @@ impl App {
                 ));
             }
 
-            let mut components = Vec::with_capacity(p_cfg.components.len());
+            let mut components = Vec::with_capacity(auto_components.len() + p_cfg.components.len());
+            components.extend(auto_components);
             for component_cfg in &p_cfg.components {
                 println!(
                     "[RECURSOS] Cargando componente '{}' para planeta '{}': {}",
@@ -332,6 +381,7 @@ impl App {
 
             planets.push(CelestialBody {
                 id: p_cfg.id.clone(),
+                parent_id: p_cfg.parent_id.clone(),
                 material: p_mesh.material.clone(),
                 mesh: p_mesh,
                 scale: p_scale,
@@ -355,6 +405,26 @@ impl App {
                 axial_tilt_rad: deg_to_rad(p_cfg.axial_tilt_deg),
                 gravity_mesh: p_grav_mesh,
             });
+        }
+
+        // Posiciones orbitales iniciales: primero planetas primarios, luego lunas dependientes
+        for planet in &mut planets {
+            if planet.parent_id.is_none() {
+                planet.update(0.0);
+            }
+        }
+        for i in 0..planets.len() {
+            let center = if let Some(ref pid) = planets[i].parent_id {
+                planets
+                    .iter()
+                    .position(|p| &p.id == pid)
+                    .map(|idx| planets[idx].position)
+            } else {
+                None
+            };
+            if let Some(center) = center {
+                planets[i].update_with_parent_position(0.0, center);
+            }
         }
 
         // 2. Estado de la nave y cámara
@@ -387,7 +457,10 @@ impl App {
         );
 
         let rock_shader = ProceduralRockShader::new(config.simulation.seed, sun_body.position);
+        let earth_shader =
+            EarthLikeShader::new(config.simulation.seed, sun_body.position, camera.eye);
         let plasma_shader = PlasmaShader::new();
+        let diffuse_shader = DiffuseShader::new();
         let toon_shader = ToonShader::new(sun_body.position, camera.eye);
         let ship_shader = ShipShader::new(sun_body.position, camera.eye);
         let normal_mapped_shader = NormalMappedShader::new(sun_body.position, camera.eye);
@@ -410,7 +483,9 @@ impl App {
             ship_thruster_flames,
             thruster_flame_material: Material::new("ThrusterFlame", Vec3::new(1.0, 1.0, 1.0), None),
             combat,
+            sparks: SparkSystem::new(512),
             sun_body,
+            dyson_sphere,
             planets,
             sim_time: 0.0,
             accumulator: 0.0,
@@ -419,10 +494,14 @@ impl App {
             local_flight_mode: false,
             nearby_planet_idx: None,
             ship_thrust_state: 0.0,
+            impact_shake_timer: 0.0,
+            impact_shake_intensity: 0.0,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
             normal_mapped_shader,
             rock_shader,
+            earth_shader,
             plasma_shader,
+            diffuse_shader,
             force_field_shader: ForceFieldShader::new(camera.eye),
             ship_shader,
             enemy_shader,
@@ -709,8 +788,26 @@ impl App {
 
         // Órbitas y rotación axial calculadas analíticamente por tiempo
         self.sun_body.update(self.sim_time);
+        if let Some(ref mut dyson) = self.dyson_sphere {
+            dyson.update(dt);
+        }
         for planet in &mut self.planets {
-            planet.update(self.sim_time);
+            if planet.parent_id.is_none() {
+                planet.update(self.sim_time);
+            }
+        }
+        for i in 0..self.planets.len() {
+            let center = if let Some(ref pid) = self.planets[i].parent_id {
+                self.planets
+                    .iter()
+                    .position(|p| &p.id == pid)
+                    .map(|idx| self.planets[idx].position)
+            } else {
+                None
+            };
+            if let Some(center) = center {
+                self.planets[i].update_with_parent_position(self.sim_time, center);
+            }
         }
 
         // Detección del planeta más próximo para aproximación y modo local orbital
@@ -749,6 +846,15 @@ impl App {
                 self.sun_body.gravity_strength,
                 dt,
             );
+            if let Some(ref dyson) = self.dyson_sphere {
+                self.ship_state.apply_gravitational_attraction(
+                    self.sun_body.position,
+                    dyson.radius,
+                    dyson.gravity_radius,
+                    dyson.gravity_strength,
+                    dt,
+                );
+            }
             for planet in &self.planets {
                 self.ship_state.apply_gravitational_attraction(
                     planet.position,
@@ -760,18 +866,45 @@ impl App {
             }
         }
 
+        self.impact_shake_timer = (self.impact_shake_timer - dt).max(0.0);
+
         // Envolventes compartidas: Sol, planetas y objetos de superficie.
         let obstacles = self.collect_collision_obstacles();
         if self.combat.player_is_alive() {
             for &obstacle in &obstacles {
-                resolve_sphere_collision(
+                if let Some(contact) = resolve_sphere_collision_with_rebound(
                     &mut self.ship_state.position,
                     &mut self.ship_state.velocity,
                     self.ship_state.collision_radius,
                     obstacle,
-                );
+                    0.70,
+                ) && contact.impact_speed > 1.5
+                {
+                    let shake_power = (contact.impact_speed * 0.035).clamp(0.06, 0.35);
+                    self.impact_shake_timer = 0.16;
+                    self.impact_shake_intensity = shake_power;
+
+                    if let Some(damage) = self.combat.apply_collision_damage(contact.impact_speed) {
+                        println!(
+                            "[COLISIÓN] Impacto a {:.1} u/s. Daño: {:.1}. Vida: {:.0}/{:.0}",
+                            contact.impact_speed,
+                            damage,
+                            self.combat.player_health,
+                            self.config.enemies.player_max_health
+                        );
+                    }
+                    let spark_count = ((contact.impact_speed * 5.0) as usize).clamp(36, 72);
+                    self.sparks.emit_sparks(
+                        contact.point,
+                        contact.normal,
+                        spark_count,
+                        contact.impact_speed,
+                    );
+                }
             }
         }
+
+        self.sparks.update(dt);
 
         if input.fire && self.combat.player_is_alive() {
             self.combat.try_player_fire(
@@ -866,6 +999,13 @@ impl App {
             self.sun_body.radius + self.sun_body.collision_margin,
         ));
 
+        if let Some(ref dyson) = self.dyson_sphere {
+            obstacles.push(CollisionSphere::new(
+                self.sun_body.position,
+                dyson.collision_radius,
+            ));
+        }
+
         for planet in &self.planets {
             obstacles.push(CollisionSphere::new(
                 planet.position,
@@ -913,35 +1053,87 @@ impl App {
 
     /// Renderiza todos los cuerpos de la escena continua en el framebuffer propio en CPU.
     pub fn render_scene(&mut self, stats: &mut FrameStats) {
+        // Sacudida de impacto (Screen Shake) en la cámara para retroalimentación visual contundente
+        let active_camera = if self.impact_shake_timer > 0.0 {
+            let shake_amp = self.impact_shake_intensity * (self.impact_shake_timer / 0.16);
+            let shake_freq = self.sim_time * 45.0;
+            let forward = (self.camera.target - self.camera.eye).normalize();
+            let right = forward.cross(self.camera.up).normalize();
+            let shake_offset = self.camera.up * (shake_freq.sin() * shake_amp * 0.35)
+                + right * ((shake_freq * 1.30).cos() * shake_amp * 0.45);
+
+            let mut cam = self.camera;
+            cam.eye += shake_offset;
+            cam.target += shake_offset;
+            cam
+        } else {
+            self.camera
+        };
+
         if self.shader_mode == ShaderMode::DepthDebug
             || self.shader_mode == ShaderMode::NormalsDebug
         {
             self.framebuffer.clear(crate::buffer::Color::BLACK);
         } else {
-            self.sky_shader.render(&mut self.framebuffer, &self.camera);
+            self.sky_shader
+                .render(&mut self.framebuffer, &active_camera);
         }
         self.depth_buffer.clear();
 
-        let vp_matrix = self.camera.view_projection_matrix();
-        let frustum = self.camera.frustum();
-        self.toon_shader.camera_pos = self.camera.eye;
+        let vp_matrix = active_camera.view_projection_matrix();
+        let frustum = active_camera.frustum();
+        self.toon_shader.camera_pos = active_camera.eye;
         self.toon_shader.light_pos = self.sun_body.position;
-        self.ship_shader.camera_pos = self.camera.eye;
+        self.ship_shader.camera_pos = active_camera.eye;
         self.ship_shader.light_pos = self.sun_body.position;
-        self.enemy_shader.camera_pos = self.camera.eye;
+        self.enemy_shader.camera_pos = active_camera.eye;
         self.enemy_shader.light_pos = self.sun_body.position;
         self.plasma_shader.sun_center = self.sun_body.position;
         self.rock_shader.light_pos = self.sun_body.position;
+        self.earth_shader.light_pos = self.sun_body.position;
+        self.earth_shader.camera_pos = active_camera.eye;
         self.planet_shader.light_pos = self.sun_body.position;
         self.normal_mapped_shader.light_pos = self.sun_body.position;
-        self.normal_mapped_shader.camera_pos = self.camera.eye;
+        self.normal_mapped_shader.camera_pos = active_camera.eye;
 
         let mut target = RenderTarget {
             framebuffer: &mut self.framebuffer,
             depth_buffer: &mut self.depth_buffer,
         };
 
-        // 1. Sol (Shader animado de plasma con Frustum Culling)
+        // 1. Esfera de Dyson (se dibuja antes del Sol para que su estructura opaca
+        // escriba en el Z-buffer y descarte por Early-Z los fragmentos cubiertos del costoso PlasmaShader)
+        if let Some(ref dyson) = self.dyson_sphere {
+            let dyson_cull_radius = dyson.radius * 1.05;
+
+            if frustum.intersects_sphere(self.sun_body.position, dyson_cull_radius) {
+                let dyson_model = dyson.model_matrix(self.sun_body.position);
+                let dyson_rot = dyson.rotation_matrix();
+
+                // Cada submalla de la esfera se dibuja con su respectivo material cargado del MTL
+                for mesh in &dyson.meshes {
+                    Self::draw_mesh(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.diffuse_shader,
+                        mesh,
+                        &dyson_model,
+                        &dyson_rot,
+                        &vp_matrix,
+                        &mesh.material,
+                        &mut target,
+                        stats,
+                    );
+                }
+            } else {
+                stats.objetos_descartados_frustum += 1;
+            }
+        }
+
+        // 2. Sol (Shader animado de plasma con Frustum Culling y descarte Early-Z tras la Esfera de Dyson)
         if !frustum.intersects_sphere(self.sun_body.position, self.sun_body.radius) {
             stats.objetos_descartados_frustum += 1;
             stats.triangulos_descartados_frustum += self.sun_body.mesh.indices.len() / 3;
@@ -1029,6 +1221,25 @@ impl App {
                     &self.normals_shader,
                     &self.toon_shader,
                     &self.rock_shader,
+                    &planet.mesh,
+                    &p_model,
+                    &p_rot,
+                    &vp_matrix,
+                    &planet.material,
+                    &mut target,
+                    stats,
+                );
+            } else if planet.shader_type == "earth_like" || planet.shader_type == "earth" {
+                self.earth_shader.body_center = planet.position;
+                self.earth_shader
+                    .set_orientation(planet.rotation_rad, planet.axial_tilt_rad);
+                Self::draw_mesh(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.earth_shader,
                     &planet.mesh,
                     &p_model,
                     &p_rot,
@@ -1168,7 +1379,7 @@ impl App {
 
             // 2.4 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
             for group in &planet.surface_groups {
-                let dist_to_planet_center = (self.camera.eye - planet.position).length();
+                let dist_to_planet_center = (active_camera.eye - planet.position).length();
                 let dist_to_surface = (dist_to_planet_center - planet.radius).max(0.0);
 
                 // Descarte lejano O(1): si la cámara está fuera del radio de visibilidad, omitir todo el grupo
@@ -1190,7 +1401,7 @@ impl App {
                     // Descarte de cara oculta/horizonte del planeta: si el objeto se ubica en el hemisferio
                     // posterior respecto a la cámara, el cuerpo sólido opaco del planeta lo oculta por completo.
                     let world_normal = p_rot.transform_direction(instance.local_normal);
-                    let to_cam_from_center = self.camera.eye - planet.position;
+                    let to_cam_from_center = active_camera.eye - planet.position;
                     if world_normal.dot(to_cam_from_center) < -0.15 {
                         continue;
                     }
@@ -1393,7 +1604,7 @@ impl App {
         }
 
         // 5. Esferas semitransparentes de campo gravitatorio / atmósfera (Alpha Blending)
-        self.force_field_shader.camera_pos = self.camera.eye;
+        self.force_field_shader.camera_pos = active_camera.eye;
         self.force_field_shader.sim_time = self.sim_time;
         let field_material = Material::default();
 
@@ -1438,6 +1649,10 @@ impl App {
         if self.ship_thrust_state > 1.5 && self.combat.player_is_alive() {
             draw_speed_streaks(&mut self.framebuffer, self.sim_time, 16);
         }
+
+        // 6. Sistema de partículas (chispas incandescentes de colisión en CPU con Z-test)
+        self.sparks
+            .render(&mut self.framebuffer, &self.depth_buffer, &vp_matrix);
 
         // Las barras se dibujan al final como overlay del framebuffer CPU.
         Self::draw_entity_health_bars(

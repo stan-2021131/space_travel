@@ -428,3 +428,36 @@ fn observing_enemies_remain_static_after_collision_resolution() {
 
     assert_eq!(combat.enemies[0].velocity, Vec3::zero());
 }
+
+#[test]
+fn collision_damage_applied_on_high_speed_impact() {
+    let cfg = config();
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
+    let initial_health = combat.player_health;
+
+    // Choque a baja velocidad (< 2.0 u/s) no debe infligir daño
+    let no_dmg = combat.apply_collision_damage(1.5);
+    assert!(no_dmg.is_none());
+    assert_eq!(combat.player_health, initial_health);
+
+    // Choque a velocidad moderada (5.0 u/s) inflige daño leve (3.0 + (5.0 - 2.0) * 0.4 = 4.2)
+    let dmg = combat.apply_collision_damage(5.0);
+    assert!(dmg.is_some());
+    let damage_dealt = dmg.unwrap();
+    assert!((damage_dealt - 4.2).abs() < 1e-4);
+    assert!((combat.player_health - (initial_health - 4.2)).abs() < 1e-4);
+    assert!(combat.collision_immunity_timer > 0.0);
+
+    // Impacto subsiguiente inmediato durante el temporizador de gracia debe ser ignorado
+    let blocked_dmg = combat.apply_collision_damage(10.0);
+    assert!(blocked_dmg.is_none());
+
+    // Tras el paso de tiempo suficiente en update, vuelve a ser vulnerable
+    combat.update(1.0, 0.5, Vec3::zero(), &cfg.enemies);
+    assert_eq!(combat.collision_immunity_timer, 0.0);
+
+    let next_dmg = combat.apply_collision_damage(15.0);
+    assert!(next_dmg.is_some());
+    // El daño máximo está acotado en 10.0
+    assert!((next_dmg.unwrap() - 8.2).abs() < 1e-4);
+}
