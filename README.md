@@ -9,6 +9,7 @@ Proyecto final del curso de **Gráficas por Computadora (2026)**. Consiste en un
 El proyecto implementa un sistema solar interactivo tridimensional, continuo, navegable y gobernado por configuración declarativa:
 - **Cuerpo Central (Sol)**: Malla esférica geodésica ubicada en el origen $(0, 0, 0)$ renderizada con shaders CPU (emisivo o plasma animado) que simulan autoiluminación y dinámica térmica solar.
 - **Planetas y Cuerpos Celestes**: Cuerpos que orbitan en el plano XZ y rotan sobre su eje Y según periodos físicos parametrizados, con texturas PNG o shaders procedurales en CPU. El planeta destruido incorpora un anillo inclinado de escombros con revolución y giro individual independientes.
+- **Lunas y Órbitas Jerárquicas**: Cuerpos celestes secundarios que orbitan alrededor de su planeta padre (como la luna Homero orbitando la dona gigante), calculando su centro orbital analíticamente a partir de la traslación dinámica del astro padre.
 - **Nave Espacial y Navegación**: Modelo 3D centrado y escalado a unidades de mundo (WU), pilotable en 6 grados de libertad angulares con aceleración progresiva, frenado e inercia arcade basada estrictamente en tiempo ($dt$).
 - **Cámara de Persecución Suave**: Cámara en tercera persona posicionada a una distancia fija detrás y arriba de la nave, orientada hacia un punto adelantado de mira y amortiguada exponencialmente.
 - **Detección y Respuesta a Colisiones**: Resolución analítica inelástica contra las esferas de colisión de los astros, cancelando la velocidad entrante, preservando la componente tangencial y permitiendo el deslizamiento suave sobre la superficie.
@@ -72,6 +73,11 @@ Para garantizar consistencia numérica sin parámetros sin uso:
 - **Matriz de Modelo Jerárquica**:
   $$M_{\text{body}} = T(\vec{p}) \cdot R_y(\phi) \cdot S(r)$$
   Asegura que la orientación de las superficies y objetos secundarios acompañen de forma rígida y solidaria el giro planetario.
+
+### Órbitas Satelitales Jerárquicas (Lunas)
+Los cuerpos celestes que declaran un astro padre mediante `parent_id` (como la luna Homero alrededor del planeta dona) componen su posición jerárquicamente en $O(1)$:
+$$\vec{p}_{\text{luna}}(t) = \vec{p}_{\text{padre}}(t) + (r_{\text{orb}} \cos\theta, 0, r_{\text{orb}} \sin\theta)$$
+El centro orbital acompaña rígidamente la traslación del astro padre mientras la luna describe su revolución y rotación axial independientes. Los modelos 3D multi-material (como Homero con 5 submallas de piel, ojos, camisa, boca y pelo) se dividen automáticamente al cargar y se articulan como submallas rígidas coordinadas bajo la misma matriz de modelo.
 
 ---
 
@@ -339,7 +345,7 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 |---|---|:---:|:---:|---|
 | **Base Habilitante** | Renderer 3D propio en CPU (Sin funciones 3D de Raylib) | Requisito | 0 | Implementado y Validado |
 | **Base Habilitante** | Carga y dibujo con MVP, Z-Buffer y Shader en CPU | Requisito | 0 | Implementado y Validado |
-| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **50** | **Reclamado**: 5 planetas con órbita, rotación sobre eje y exploración cercana: Rocoso, Destruido con anillos, Asteroide Procedural, Kirby compuesto y Dona gigante con campo de fuerza |
+| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **50** | **Reclamado**: 5 planetas principales con órbita, rotación sobre eje y exploración cercana: Rocoso, Destruido con anillos, Asteroide Procedural, Kirby compuesto y Dona gigante (más luna satelital Homero en órbita jerárquica) |
 | **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **20** | **Reclamado**: 5 modelos propios de superficie: Montaña (`Mountain_1_LOD_High.obj`), Pastel (`cake_slice.obj`), Galleta (`cookie.obj`), Helado (`ice_cream_cone.obj`) y Paleta (`lollipop.obj`) |
 | **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | **Reclamado**: Espiral de Fibonacci esférica determinista y distribución azimutal toroidal sobre corteza superior (`seed = 67`) |
 | **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica y normal tangencial de toroide |
@@ -374,3 +380,4 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 | **Planeta Destruido** | `assets/models/destroyed/` | Segundo planeta explorable, con geometría fragmentada, albedo y normal map | Modelo creado por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Escombros orbitales** | `assets/models/objects/escombro1/` y `escombro2/` | Dos variantes reutilizadas en el anillo del planeta destruido | Modelos creados por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Planeta Kirby** | `assets/models/kirby_planet/` y `assets/sources/kirby_planet/` | Plataforma orbital, propulsor y personaje compuesto por cuerpo, pies, ojos y boca | Modelado y ensamblado por Juanda en Blender; texturas generadas con asistencia de Gemini y revisadas por el equipo |
+| **Luna Homero** | `assets/models/homer/homero.obj` / `homero.mtl` | Cuerpo celeste compuesto satelital (5 submallas multi-material) que orbita el planeta dona | Modelo 3D exportado desde Blender con materiales para piel, ojos, camisa, boca y pelo |
