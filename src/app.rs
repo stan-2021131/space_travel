@@ -14,7 +14,7 @@ use crate::physics::{
     CollisionSphere, ShipInput, ShipState, resolve_sphere_collision_with_rebound,
 };
 use crate::pipeline::{
-    AlienEnergyShader, BlendMode, DepthDebugShader, DiffuseShader, EmissiveShader,
+    AlienEnergyShader, BlendMode, DepthDebugShader, DiffuseShader, EarthLikeShader, EmissiveShader,
     ForceFieldShader, FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader,
     ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader,
     SoftwareRenderer, TexturedDiffuseShader, ThrusterFlameShader, ToonShader,
@@ -73,6 +73,7 @@ pub struct App {
     planet_shader: TexturedDiffuseShader,
     normal_mapped_shader: NormalMappedShader,
     rock_shader: ProceduralRockShader,
+    earth_shader: EarthLikeShader,
     plasma_shader: PlasmaShader,
     diffuse_shader: DiffuseShader,
     force_field_shader: ForceFieldShader,
@@ -431,6 +432,8 @@ impl App {
         );
 
         let rock_shader = ProceduralRockShader::new(config.simulation.seed, sun_body.position);
+        let earth_shader =
+            EarthLikeShader::new(config.simulation.seed, sun_body.position, camera.eye);
         let plasma_shader = PlasmaShader::new();
         let diffuse_shader = DiffuseShader::new();
         let toon_shader = ToonShader::new(sun_body.position, camera.eye);
@@ -471,6 +474,7 @@ impl App {
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
             normal_mapped_shader,
             rock_shader,
+            earth_shader,
             plasma_shader,
             diffuse_shader,
             force_field_shader: ForceFieldShader::new(camera.eye),
@@ -1034,6 +1038,8 @@ impl App {
         self.enemy_shader.light_pos = self.sun_body.position;
         self.plasma_shader.sun_center = self.sun_body.position;
         self.rock_shader.light_pos = self.sun_body.position;
+        self.earth_shader.light_pos = self.sun_body.position;
+        self.earth_shader.camera_pos = active_camera.eye;
         self.planet_shader.light_pos = self.sun_body.position;
         self.normal_mapped_shader.light_pos = self.sun_body.position;
         self.normal_mapped_shader.camera_pos = active_camera.eye;
@@ -1153,6 +1159,25 @@ impl App {
                     &self.normals_shader,
                     &self.toon_shader,
                     &self.rock_shader,
+                    &planet.mesh,
+                    &p_model,
+                    &p_rot,
+                    &vp_matrix,
+                    &planet.material,
+                    &mut target,
+                    stats,
+                );
+            } else if planet.shader_type == "earth_like" || planet.shader_type == "earth" {
+                self.earth_shader.body_center = planet.position;
+                self.earth_shader
+                    .set_orientation(planet.rotation_rad, planet.axial_tilt_rad);
+                Self::draw_mesh(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.earth_shader,
                     &planet.mesh,
                     &p_model,
                     &p_rot,

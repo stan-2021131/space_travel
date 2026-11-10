@@ -29,7 +29,34 @@ fn test_valid_configuration_loading() {
     assert!(config.enemies.supervising_distance > config.enemies.preferred_distance);
     assert!(config.sun.radius > 0.0);
     assert!(!config.planets.is_empty());
-    assert_eq!(config.planets[0].id, "rocoso");
+    let rocoso = config
+        .planets
+        .iter()
+        .find(|planet| planet.id == "rocoso")
+        .expect("Debe existir el planeta rocoso");
+    assert_eq!(rocoso.shader, "normal_mapped");
+
+    let tierra = config
+        .planets
+        .iter()
+        .find(|planet| planet.id == "tierra")
+        .expect("Debe existir el planeta tierra");
+    assert_eq!(tierra.shader, "earth_like");
+    assert_eq!(
+        tierra.surface_objects.len(),
+        5,
+        "Debe tener los 5 tipos de objetos de árboles y ciudad"
+    );
+    for obj in &tierra.surface_objects {
+        assert!(
+            obj.max_distance <= 40.0,
+            "Los objetos de corteza de la Tierra deben tener distancia de descarte <= 40.0 para rendimiento en CPU"
+        );
+        assert!(
+            obj.fade_range <= 15.0,
+            "El rango de transición debe ser suave y proporcionado"
+        );
+    }
     let destroyed = config
         .planets
         .iter()

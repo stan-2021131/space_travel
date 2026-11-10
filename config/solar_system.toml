@@ -102,6 +102,61 @@ gravity_radius = 72.0
 gravity_strength = 8.0
 
 [[planets]]
+id = "tierra"
+model_path = "assets/models/rocky/rocky.obj"
+radius = 16.0
+orbital_radius = 115.0
+orbital_period = 95.0
+rotation_period = 24.0
+initial_orbital_angle_deg = 85.0
+axial_tilt_deg = 23.5
+collision_margin = 1.0
+shader = "earth_like"
+gravity_strength = 12.0
+gravity_radius = 28.0
+visible_gravity = true
+
+  [[planets.surface_objects]]
+  name = "Roble"
+  model_path = "assets/models/objects/trees/Oak_Tree_Summer.obj"
+  count = 14
+  scale = 0.18
+  max_distance = 35.0
+  fade_range = 10.0
+
+  [[planets.surface_objects]]
+  name = "Pino"
+  model_path = "assets/models/objects/trees/Pine_Tree_2_Summer.obj"
+  count = 14
+  scale = 0.18
+  max_distance = 35.0
+  fade_range = 10.0
+
+  [[planets.surface_objects]]
+  name = "Casa"
+  model_path = "assets/models/objects/city/house.obj"
+  count = 8
+  scale = 0.22
+  max_distance = 35.0
+  fade_range = 10.0
+
+  [[planets.surface_objects]]
+  name = "Edificio"
+  model_path = "assets/models/objects/city/building.obj"
+  count = 6
+  scale = 0.18
+  max_distance = 35.0
+  fade_range = 10.0
+
+  [[planets.surface_objects]]
+  name = "Fabrica"
+  model_path = "assets/models/objects/city/factory.obj"
+  count = 6
+  scale = 0.20
+  max_distance = 35.0
+  fade_range = 10.0
+
+[[planets]]
 id = "rocoso"
 model_path = "assets/models/rocky/rocky.obj"
 radius = 15.0

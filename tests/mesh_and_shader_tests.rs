@@ -552,3 +552,104 @@ fn test_homero_load() {
         "Debe existir el material de camisa blanca"
     );
 }
+
+#[test]
+fn test_earth_like_shader_determinism_and_features() {
+    use space_travel::pipeline::{EarthLikeShader, FragmentInput, FragmentShader};
+
+    let seed = 67;
+    let light_pos = Vec3::new(100.0, 0.0, 0.0);
+    let camera_pos = Vec3::new(0.0, 0.0, 50.0);
+    let shader_a = EarthLikeShader::new(seed, light_pos, camera_pos);
+    let shader_b = EarthLikeShader::new(seed, light_pos, camera_pos);
+    let mat = Material::default_diffuse();
+
+    let mut has_green = false;
+    let mut has_blue = false;
+
+    // Muestrear puntos alrededor de la esfera ecuatorial
+    for angle_deg in 0..36 {
+        let rad = (angle_deg as f32 * 10.0).to_radians();
+        let pos = Vec3::new(rad.cos() * 16.0, 0.0, rad.sin() * 16.0);
+        let normal = pos.normalize();
+        let input = FragmentInput {
+            screen_x: 0,
+            screen_y: 0,
+            depth_ndc: 0.5,
+            world_pos: pos,
+            world_normal: normal,
+            world_tangent: Vec3::new(0.0, 1.0, 0.0),
+            uv: Vec2::zero(),
+            barycentric: Vec3::new(0.33, 0.33, 0.34),
+            material: &mat,
+        };
+
+        let col_a = shader_a.shade(&input);
+        let col_b = shader_b.shade(&input);
+
+        // 1. Determinismo absoluto
+        assert_eq!(col_a.r, col_b.r);
+        assert_eq!(col_a.g, col_b.g);
+        assert_eq!(col_a.b, col_b.b);
+
+        // 2. Detección de tonos verdes (continentes) vs tonos azules (mares)
+        if col_a.g > col_a.b && col_a.g > col_a.r {
+            has_green = true;
+        }
+        if col_a.b > col_a.g && col_a.b > col_a.r {
+            has_blue = true;
+        }
+    }
+
+    assert!(
+        has_green,
+        "El shader debe sintetizar zonas continentales verdes"
+    );
+    assert!(
+        has_blue,
+        "El shader debe sintetizar manchas oceánicas azules"
+    );
+
+    // 3. Casquete polar en el polo norte
+    let north_pole_pos = Vec3::new(0.0, 16.0, 0.0);
+    let north_input = FragmentInput {
+        screen_x: 0,
+        screen_y: 0,
+        depth_ndc: 0.5,
+        world_pos: north_pole_pos,
+        world_normal: Vec3::new(0.0, 1.0, 0.0),
+        world_tangent: Vec3::new(1.0, 0.0, 0.0),
+        uv: Vec2::zero(),
+        barycentric: Vec3::new(0.33, 0.33, 0.34),
+        material: &mat,
+    };
+    let polar_shader = EarthLikeShader::new(seed, Vec3::new(0.0, 100.0, 0.0), camera_pos);
+    let polar_col = polar_shader.shade(&north_input);
+    // El casquete polar iluminado directamente debe ser blanco/nieve (r, g, b altos y similares)
+    assert!(
+        polar_col.r > 190 && polar_col.g > 190 && polar_col.b > 190,
+        "El polo iluminado debe tener nieve blanca polar"
+    );
+
+    // 4. Verificación de rotación y precomputación trigonométrica (set_orientation)
+    let mut rot_shader = EarthLikeShader::new(seed, light_pos, camera_pos);
+    rot_shader.set_orientation(std::f32::consts::FRAC_PI_2, 0.41);
+    assert!((rot_shader.rot_cos - std::f32::consts::FRAC_PI_2.cos()).abs() < 1e-6);
+    assert!((rot_shader.rot_sin - std::f32::consts::FRAC_PI_2.sin()).abs() < 1e-6);
+    assert!((rot_shader.tilt_cos - (-0.41f32).cos()).abs() < 1e-6);
+    assert!((rot_shader.tilt_sin - (-0.41f32).sin()).abs() < 1e-6);
+
+    let sample_input = FragmentInput {
+        screen_x: 0,
+        screen_y: 0,
+        depth_ndc: 0.5,
+        world_pos: Vec3::new(16.0, 0.0, 0.0),
+        world_normal: Vec3::new(1.0, 0.0, 0.0),
+        world_tangent: Vec3::new(0.0, 1.0, 0.0),
+        uv: Vec2::zero(),
+        barycentric: Vec3::new(0.33, 0.33, 0.34),
+        material: &mat,
+    };
+    let col_rotated = rot_shader.shade(&sample_input);
+    assert!(col_rotated.a == 255);
+}
