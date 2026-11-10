@@ -258,3 +258,18 @@ visible_gravity = true
   scale = 8.0
   max_distance = 120.0
   fade_range = 40.0
+
+[[planets]]
+id = "homero"
+parent_id = "dona"
+model_path = "assets/models/homer/homero.obj"
+radius = 8.0
+orbital_radius = 80.0
+orbital_period = 45.0
+rotation_period = 20.0
+initial_orbital_angle_deg = 45.0
+collision_margin = 1.0
+shader = "diffuse"
+gravity_strength = 5.0
+gravity_radius = 16.0
+visible_gravity = false

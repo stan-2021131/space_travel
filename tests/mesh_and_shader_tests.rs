@@ -524,3 +524,31 @@ fn test_preview_transform_logic() {
     assert!((preview.scale.y - 0.2).abs() < 1e-5);
     assert!((preview.scale.z - 0.2).abs() < 1e-5);
 }
+
+#[test]
+fn test_homero_load() {
+    let single = Mesh::load_from_obj(Path::new("assets/models/homer/homero.obj")).unwrap();
+    assert!(single.vertex_count() > 0 && single.triangle_count() > 0);
+    let models = Mesh::load_models_from_obj(Path::new("assets/models/homer/homero.obj")).unwrap();
+    assert_eq!(
+        models.len(),
+        5,
+        "Homero debe dividirse en 5 submallas por material"
+    );
+    // Verificar que los materiales tienen los colores de Homero
+    let skin_mat = models.iter().find(|m| m.material.name == "M_Skin_Yellow");
+    assert!(
+        skin_mat.is_some(),
+        "Debe existir el material de piel amarilla"
+    );
+    let eyes_mat = models.iter().find(|m| m.material.name == "M_Eyes_White");
+    assert!(
+        eyes_mat.is_some(),
+        "Debe existir el material de ojos blancos"
+    );
+    let shirt_mat = models.iter().find(|m| m.material.name == "M_Shirt_White");
+    assert!(
+        shirt_mat.is_some(),
+        "Debe existir el material de camisa blanca"
+    );
+}

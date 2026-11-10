@@ -148,6 +148,7 @@ impl App {
 
         let sun_body = CelestialBody {
             id: config.sun.id.clone(),
+            parent_id: None,
             material: sun_mesh.material.clone(),
             mesh: sun_mesh,
             scale: sun_scale,
@@ -198,6 +199,7 @@ impl App {
 
         let mut planets = Vec::new();
         for (planet_index, p_cfg) in config.planets.iter().enumerate() {
+            let mut auto_components = Vec::new();
             let mut mesh = if p_cfg.mesh_type == "icosphere" {
                 println!(
                     "[PROCEDURAL] Generando esfera geodésica para '{}' (radio: {}, subdiv: {})",
@@ -209,12 +211,21 @@ impl App {
                     "[RECURSOS] Cargando cuerpo celeste '{}': {}",
                     p_cfg.id, p_cfg.model_path
                 );
-                let mut m = Mesh::load_from_obj(Path::new(&p_cfg.model_path))?;
-                // Subdivisión procedural de geometría previa a rasterizar (+10 pts)
+                let mut loaded_models = Mesh::load_models_from_obj(Path::new(&p_cfg.model_path))?;
+                let mut primary_mesh = loaded_models.remove(0);
                 for _ in 0..p_cfg.subdivisions {
-                    m.subdivide();
+                    primary_mesh.subdivide();
                 }
-                m
+                for (sub_idx, mut sub_mesh) in loaded_models.into_iter().enumerate() {
+                    for _ in 0..p_cfg.subdivisions {
+                        sub_mesh.subdivide();
+                    }
+                    auto_components.push(CelestialComponent::new(
+                        format!("{}_part_{}", p_cfg.id, sub_idx + 1),
+                        Arc::new(sub_mesh),
+                    ));
+                }
+                primary_mesh
             };
 
             // Deformación geométrica por ruido con semilla universal (+10 pts)
@@ -233,7 +244,11 @@ impl App {
                 );
             }
 
-            let geo_radius = mesh.geometric_radius().max(1e-4);
+            let mut max_geo_radius = mesh.geometric_radius();
+            for comp in &auto_components {
+                max_geo_radius = max_geo_radius.max(comp.origin_radius);
+            }
+            let geo_radius = max_geo_radius.max(1e-4);
             let p_scale = p_cfg.radius / geo_radius;
             let p_mesh = Arc::new(mesh);
 
@@ -319,7 +334,8 @@ impl App {
                 ));
             }
 
-            let mut components = Vec::with_capacity(p_cfg.components.len());
+            let mut components = Vec::with_capacity(auto_components.len() + p_cfg.components.len());
+            components.extend(auto_components);
             for component_cfg in &p_cfg.components {
                 println!(
                     "[RECURSOS] Cargando componente '{}' para planeta '{}': {}",
@@ -340,6 +356,7 @@ impl App {
 
             planets.push(CelestialBody {
                 id: p_cfg.id.clone(),
+                parent_id: p_cfg.parent_id.clone(),
                 material: p_mesh.material.clone(),
                 mesh: p_mesh,
                 scale: p_scale,
@@ -362,6 +379,26 @@ impl App {
                 axial_tilt_rad: deg_to_rad(p_cfg.axial_tilt_deg),
                 gravity_mesh: p_grav_mesh,
             });
+        }
+
+        // Posiciones orbitales iniciales: primero planetas primarios, luego lunas dependientes
+        for planet in &mut planets {
+            if planet.parent_id.is_none() {
+                planet.update(0.0);
+            }
+        }
+        for i in 0..planets.len() {
+            let center = if let Some(ref pid) = planets[i].parent_id {
+                planets
+                    .iter()
+                    .position(|p| &p.id == pid)
+                    .map(|idx| planets[idx].position)
+            } else {
+                None
+            };
+            if let Some(center) = center {
+                planets[i].update_with_parent_position(0.0, center);
+            }
         }
 
         // 2. Estado de la nave y cámara
@@ -722,7 +759,22 @@ impl App {
             dyson.update(dt);
         }
         for planet in &mut self.planets {
-            planet.update(self.sim_time);
+            if planet.parent_id.is_none() {
+                planet.update(self.sim_time);
+            }
+        }
+        for i in 0..self.planets.len() {
+            let center = if let Some(ref pid) = self.planets[i].parent_id {
+                self.planets
+                    .iter()
+                    .position(|p| &p.id == pid)
+                    .map(|idx| self.planets[idx].position)
+            } else {
+                None
+            };
+            if let Some(center) = center {
+                self.planets[i].update_with_parent_position(self.sim_time, center);
+            }
         }
 
         // Detección del planeta más próximo para aproximación y modo local orbital

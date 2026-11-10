@@ -131,6 +131,7 @@ fn test_ship_orientation_and_forward_vector() {
 fn test_orbital_mechanics_deterministic() {
     let mut body = CelestialBody {
         id: "rocoso".to_string(),
+        parent_id: None,
         mesh: Arc::new(Mesh::new(vec![], vec![])),
         material: Material::default_diffuse(),
         scale: 1.0,
@@ -178,6 +179,7 @@ fn test_orbital_mechanics_deterministic() {
 fn test_celestial_body_model_and_rotation_matrices() {
     let mut body = CelestialBody {
         id: "rocoso".to_string(),
+        parent_id: None,
         mesh: Arc::new(Mesh::new(vec![], vec![])),
         material: Material::default_diffuse(),
         scale: 2.0,
@@ -317,4 +319,79 @@ fn test_resolve_sphere_collision_with_rebound_separating_velocity() {
     // La velocidad saliente no debe ser alterada
     assert!((ship_vel.z - 5.0).abs() < 1e-4);
     assert!((ship_vel.x - 2.0).abs() < 1e-4);
+}
+
+#[test]
+fn test_moon_orbital_mechanics_relative_to_parent() {
+    let mut parent = CelestialBody {
+        id: "dona".to_string(),
+        parent_id: None,
+        mesh: Arc::new(Mesh::new(vec![], vec![])),
+        material: Material::default_diffuse(),
+        scale: 1.0,
+        radius: 45.0,
+        collision_margin: 1.0,
+        orbital_radius: 450.0,
+        orbital_period: 400.0,
+        rotation_period: 40.0,
+        initial_orbital_angle_rad: 0.0,
+        position: Vec3::zero(),
+        rotation_rad: 0.0,
+        shader_type: "diffuse".to_string(),
+        surface_groups: Vec::new(),
+        debris_rings: Vec::new(),
+        components: Vec::new(),
+        thruster_flames: Vec::new(),
+        gravity_strength: 0.0,
+        gravity_radius: 50.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
+    };
+
+    let mut moon = CelestialBody {
+        id: "homero".to_string(),
+        parent_id: Some("dona".to_string()),
+        mesh: Arc::new(Mesh::new(vec![], vec![])),
+        material: Material::default_diffuse(),
+        scale: 1.0,
+        radius: 8.0,
+        collision_margin: 1.0,
+        orbital_radius: 80.0,
+        orbital_period: 40.0,
+        rotation_period: 20.0,
+        initial_orbital_angle_rad: 0.0,
+        position: Vec3::zero(),
+        rotation_rad: 0.0,
+        shader_type: "diffuse".to_string(),
+        surface_groups: Vec::new(),
+        debris_rings: Vec::new(),
+        components: Vec::new(),
+        thruster_flames: Vec::new(),
+        gravity_strength: 0.0,
+        gravity_radius: 12.0,
+        visible_gravity: false,
+        axial_tilt_rad: 0.0,
+        gravity_mesh: None,
+    };
+
+    // t = 0: Padre en (450, 0, 0), Luna a +80 en X del padre -> (530, 0, 0)
+    parent.update(0.0);
+    moon.update_with_parent_position(0.0, parent.position);
+    assert!((parent.position.x - 450.0).abs() < 1e-4);
+    assert!((moon.position.x - 530.0).abs() < 1e-4);
+    assert!(moon.position.z.abs() < 1e-4);
+    assert!(((moon.position - parent.position).length() - 80.0).abs() < 1e-4);
+
+    // t = 10s: Luna ha recorrido T_luna / 4 (90° alrededor del padre)
+    // El padre se ha movido según su propia órbita
+    parent.update(10.0);
+    moon.update_with_parent_position(10.0, parent.position);
+    let relative_pos = moon.position - parent.position;
+    assert!(
+        (relative_pos.length() - 80.0).abs() < 1e-4,
+        "La distancia orbital al padre debe conservarse exactamente"
+    );
+    assert!(relative_pos.x.abs() < 1e-4);
+    assert!((relative_pos.z - 80.0).abs() < 1e-4);
 }
