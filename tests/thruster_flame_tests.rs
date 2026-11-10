@@ -82,3 +82,24 @@ fn configured_flames_point_away_from_their_thrusters() {
         .transform_direction(Vec3::new(0.0, 0.0, -1.0));
     assert!(kirby_direction.y < -0.999);
 }
+
+#[test]
+fn boost_multiplier_extends_ship_flame() {
+    let config = AppConfig::load_from_file(Path::new("config/solar_system.toml")).unwrap();
+    let flame_config = &config.ship.thruster_flames[0];
+    let flame = ThrusterFlame::from_degrees(
+        flame_config.position,
+        flame_config.rotation_deg,
+        flame_config.radius,
+        flame_config.length,
+        flame_config.animation_speed,
+        flame_config.idle_intensity,
+        flame_config.active_intensity,
+    );
+    let tip = Vec3::new(0.0, 0.0, -1.0);
+    let normal_tip = flame.local_model_matrix(1.0, 1.0).transform_point(tip);
+    let boost_tip = flame
+        .local_model_matrix(config.ship.boost_flame_multiplier, 1.0)
+        .transform_point(tip);
+    assert!((boost_tip - flame.position).length() > (normal_tip - flame.position).length());
+}

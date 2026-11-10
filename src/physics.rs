@@ -90,6 +90,7 @@ pub struct ShipInput {
     pub pitch_down: bool,       // Flecha Abajo
     pub roll_left: bool,        // Tecla Q
     pub roll_right: bool,       // Tecla E
+    pub boost: bool,            // Shift izquierdo junto con W
     pub fire: bool,             // Barra espaciadora
 }
 
@@ -196,8 +197,14 @@ impl ShipState {
         // 2. Aceleración y frenado / reversa progresivos
         let current_forward_speed = self.velocity.dot(fwd);
 
+        let boosting = input.boost && input.throttle_forward;
         if input.throttle_forward {
-            self.velocity += fwd * (config.acceleration * dt);
+            let acceleration = if boosting {
+                config.boost_acceleration
+            } else {
+                config.acceleration
+            };
+            self.velocity += fwd * (acceleration * dt);
         }
 
         if input.throttle_reverse {
@@ -218,8 +225,19 @@ impl ShipState {
 
         // 4. Límite de velocidad máxima
         let speed = self.velocity.length();
-        if speed > config.max_speed {
-            self.velocity = (self.velocity / speed) * config.max_speed;
+        let speed_limit = if boosting {
+            config.boost_max_speed
+        } else {
+            config.max_speed
+        };
+        if speed > speed_limit {
+            let new_speed = if boosting {
+                speed_limit
+            } else {
+                (speed * (1.0 - config.boost_release_drag * dt).clamp(0.0, 1.0))
+                    .max(config.max_speed)
+            };
+            self.velocity = (self.velocity / speed) * new_speed;
         }
 
         // 5. Integración de posición
@@ -283,4 +301,25 @@ impl ShipState {
 
         Some(accel)
     }
+}
+
+/// Daño térmico por segundo: cero fuera del radio de peligro y máximo en la superficie.
+pub fn solar_damage_per_second(
+    distance_to_center: f32,
+    surface_radius: f32,
+    damage_radius: f32,
+    max_damage_per_second: f32,
+) -> f32 {
+    if !distance_to_center.is_finite()
+        || damage_radius <= surface_radius
+        || max_damage_per_second <= 0.0
+        || distance_to_center >= damage_radius
+    {
+        return 0.0;
+    }
+
+    let t =
+        ((damage_radius - distance_to_center) / (damage_radius - surface_radius)).clamp(0.0, 1.0);
+    let smooth = t * t * (3.0 - 2.0 * t);
+    max_damage_per_second * smooth
 }

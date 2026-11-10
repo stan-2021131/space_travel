@@ -22,7 +22,7 @@ pub use combat::{CombatSystem, EncounterState, Enemy, Projectile, ProjectileOwne
 pub use config::AppConfig;
 pub use hud::{
     draw_aim_reticle, draw_health_bar, draw_orbital_lock_reticle, draw_orbital_mode_badge,
-    project_world_to_screen,
+    draw_speed_streaks, project_world_to_screen,
 };
 pub use material::Material;
 pub use math::{Mat4, Transform, Vec2, Vec3, Vec4};
@@ -30,7 +30,7 @@ pub use mesh::{AABB, Mesh, Vertex};
 pub use particles::{SparkParticle, SparkSystem};
 pub use physics::{
     CollisionContact, CollisionSphere, ShipInput, ShipState, resolve_sphere_collision,
-    resolve_sphere_collision_with_rebound,
+    resolve_sphere_collision_with_rebound, solar_damage_per_second,
 };
 pub use pipeline::{
     AlienEnergyShader, DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput,
@@ -40,7 +40,8 @@ pub use pipeline::{
 };
 pub use procedural::{generate_icosphere, generate_thruster_flame};
 pub use scene::{
-    CelestialBody, CelestialComponent, DebrisInstance, DebrisRing, ThrusterFlame,
+    CelestialBody, CelestialComponent, DebrisInstance, DebrisRing, DysonSphere, Moon,
+    ThrusterFlame,
     surface::{
         SurfaceGroup, SurfaceInstance, calculate_surface_embedding,
         generate_spherical_distribution, generate_torus_surface_distribution,

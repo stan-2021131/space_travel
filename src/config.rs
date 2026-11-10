@@ -109,6 +109,10 @@ pub struct ShipConfig {
     pub pitch_speed: f32,
     pub roll_speed: f32,
     pub collision_radius: f32,
+    pub boost_acceleration: f32,
+    pub boost_max_speed: f32,
+    pub boost_release_drag: f32,
+    pub boost_flame_multiplier: f32,
     #[serde(default)]
     pub thruster_flames: Vec<ThrusterFlameConfig>,
 }
@@ -139,6 +143,8 @@ pub struct SunConfig {
     pub gravity_radius: Option<f32>,
     #[serde(default)]
     pub visible_gravity: bool,
+    pub damage_radius: f32,
+    pub max_damage_per_second: f32,
 }
 
 impl SunConfig {
@@ -165,6 +171,20 @@ pub struct SurfaceObjectConfig {
 pub struct PlanetComponentConfig {
     pub name: String,
     pub model_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MoonConfig {
+    pub name: String,
+    pub model_path: String,
+    pub radius: f32,
+    pub orbital_radius: f32,
+    pub orbital_period: f32,
+    pub rotation_period: f32,
+    pub initial_orbital_angle_deg: f32,
+    pub orbit_tilt_deg: f32,
+    #[serde(default)]
+    pub collision_margin: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -275,6 +295,8 @@ pub struct PlanetConfig {
     pub components: Vec<PlanetComponentConfig>,
     #[serde(default)]
     pub thruster_flames: Vec<ThrusterFlameConfig>,
+    #[serde(default)]
+    pub moons: Vec<MoonConfig>,
 }
 
 impl PlanetConfig {
@@ -336,7 +358,18 @@ impl AppConfig {
             ));
         }
 
-        if self.ship.max_speed <= 0.0 || self.ship.acceleration <= 0.0 {
+        if self.ship.max_speed <= 0.0
+            || self.ship.acceleration <= 0.0
+            || !self.ship.boost_acceleration.is_finite()
+            || self.ship.boost_acceleration <= self.ship.acceleration
+            || !self.ship.boost_max_speed.is_finite()
+            || self.ship.boost_max_speed <= self.ship.max_speed
+            || !self.ship.boost_release_drag.is_finite()
+            || self.ship.boost_release_drag <= 0.0
+            || !self.ship.boost_flame_multiplier.is_finite()
+            || self.ship.boost_flame_multiplier <= 1.0
+            || self.ship.boost_flame_multiplier > 2.5
+        {
             return Err(format!(
                 "[{}] Parámetros de nave (max_speed, acceleration) deben ser positivos",
                 p
@@ -402,6 +435,13 @@ impl AppConfig {
                 "[{}] Intensidad de gravedad del sol debe ser no negativa y finita",
                 p
             ));
+        }
+        if !self.sun.damage_radius.is_finite()
+            || self.sun.damage_radius <= self.sun.radius + self.sun.collision_margin
+            || !self.sun.max_damage_per_second.is_finite()
+            || self.sun.max_damage_per_second <= 0.0
+        {
+            return Err(format!("[{}] Configuración de daño solar inválida", p));
         }
         if !self.sun.effective_gravity_radius().is_finite()
             || self.sun.effective_gravity_radius() < self.sun.radius
@@ -560,6 +600,30 @@ impl AppConfig {
                     "[{}] Configuración de llamas inválida en planeta '{}'",
                     p, planet.id
                 ));
+            }
+            let mut moon_names = HashSet::new();
+            for moon in &planet.moons {
+                if moon.name.trim().is_empty()
+                    || moon.model_path.trim().is_empty()
+                    || !moon_names.insert(moon.name.as_str())
+                    || !moon.radius.is_finite()
+                    || moon.radius <= 0.0
+                    || !moon.orbital_radius.is_finite()
+                    || moon.orbital_radius <= planet.radius + planet.collision_margin + moon.radius
+                    || !moon.orbital_period.is_finite()
+                    || moon.orbital_period <= 0.0
+                    || !moon.rotation_period.is_finite()
+                    || moon.rotation_period <= 0.0
+                    || !moon.initial_orbital_angle_deg.is_finite()
+                    || !moon.orbit_tilt_deg.is_finite()
+                    || !moon.collision_margin.is_finite()
+                    || moon.collision_margin < 0.0
+                {
+                    return Err(format!(
+                        "[{}] Configuración de luna inválida en planeta '{}'",
+                        p, planet.id
+                    ));
+                }
             }
         }
 

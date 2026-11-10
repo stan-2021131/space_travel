@@ -21,6 +21,26 @@ fn peaceful_mode_starts_without_enemies_and_with_full_health() {
 }
 
 #[test]
+fn solar_damage_can_destroy_and_respawn_player() {
+    let cfg = config();
+    let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);
+    let applied = combat.apply_player_damage(cfg.enemies.player_max_health);
+    assert_eq!(applied, cfg.enemies.player_max_health);
+    let destroyed = combat.update(10.0, 0.0, Vec3::zero(), &cfg.enemies);
+    assert!(destroyed.player_destroyed);
+    assert!(!combat.player_is_alive());
+
+    let respawned = combat.update(
+        10.0 + cfg.enemies.player_respawn_delay,
+        0.0,
+        Vec3::zero(),
+        &cfg.enemies,
+    );
+    assert!(respawned.player_respawned);
+    assert!(combat.player_is_alive());
+}
+
+#[test]
 fn activation_spawns_approachers_behind_the_sun() {
     let cfg = config();
     let mut combat = CombatSystem::new(&cfg.enemies, cfg.ship.max_speed);

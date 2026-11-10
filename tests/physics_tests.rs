@@ -21,6 +21,10 @@ fn dummy_ship_config() -> ShipConfig {
         pitch_speed: 1.5,
         roll_speed: 1.5,
         collision_radius: 0.6,
+        boost_acceleration: 20.0,
+        boost_max_speed: 35.0,
+        boost_release_drag: 1.8,
+        boost_flame_multiplier: 1.65,
         thruster_flames: Vec::new(),
     }
 }
@@ -44,6 +48,60 @@ fn test_ship_acceleration_and_drag() {
     ship.update(&ShipInput::default(), &cfg, 1.0);
     let vel_after = ship.velocity.length();
     assert!(vel_after < vel_before, "El drag debe reducir la velocidad");
+}
+
+#[test]
+fn test_boost_increases_acceleration_and_speed_limit() {
+    let cfg = dummy_ship_config();
+    let mut normal = ShipState::new(&cfg);
+    let mut boosted = ShipState::new(&cfg);
+    let normal_input = ShipInput {
+        throttle_forward: true,
+        ..Default::default()
+    };
+    let boost_input = ShipInput {
+        throttle_forward: true,
+        boost: true,
+        ..Default::default()
+    };
+
+    for _ in 0..300 {
+        normal.update(&normal_input, &cfg, 1.0 / 60.0);
+        boosted.update(&boost_input, &cfg, 1.0 / 60.0);
+    }
+
+    assert!(boosted.velocity.length() > normal.velocity.length());
+    assert!(boosted.velocity.length() <= cfg.boost_max_speed + 1e-4);
+}
+
+#[test]
+fn test_boost_release_returns_gradually_to_normal_limit() {
+    let cfg = dummy_ship_config();
+    let mut ship = ShipState::new(&cfg);
+    ship.velocity = ship.forward() * cfg.boost_max_speed;
+    ship.update(&ShipInput::default(), &cfg, 1.0 / 60.0);
+    let first_release_speed = ship.velocity.length();
+    assert!(first_release_speed < cfg.boost_max_speed);
+    assert!(first_release_speed > cfg.max_speed);
+
+    for _ in 0..180 {
+        ship.update(&ShipInput::default(), &cfg, 1.0 / 60.0);
+    }
+    assert!(ship.velocity.length() <= cfg.max_speed + 1e-3);
+}
+
+#[test]
+fn test_solar_damage_curve_is_monotonic_and_bounded() {
+    let surface = 31.0;
+    let danger = 65.0;
+    let max_damage = 30.0;
+    let outside = space_travel::solar_damage_per_second(65.0, surface, danger, max_damage);
+    let middle = space_travel::solar_damage_per_second(48.0, surface, danger, max_damage);
+    let surface_damage = space_travel::solar_damage_per_second(31.0, surface, danger, max_damage);
+
+    assert_eq!(outside, 0.0);
+    assert!(middle > 0.0 && middle < max_damage);
+    assert!((surface_damage - max_damage).abs() < 1e-4);
 }
 
 #[test]
@@ -148,6 +206,7 @@ fn test_orbital_mechanics_deterministic() {
         debris_rings: Vec::new(),
         components: Vec::new(),
         thruster_flames: Vec::new(),
+        moons: Vec::new(),
         gravity_strength: 0.0,
         gravity_radius: 14.0,
         visible_gravity: false,
@@ -196,6 +255,7 @@ fn test_celestial_body_model_and_rotation_matrices() {
         debris_rings: Vec::new(),
         components: Vec::new(),
         thruster_flames: Vec::new(),
+        moons: Vec::new(),
         gravity_strength: 0.0,
         gravity_radius: 14.0,
         visible_gravity: false,
@@ -342,6 +402,7 @@ fn test_moon_orbital_mechanics_relative_to_parent() {
         debris_rings: Vec::new(),
         components: Vec::new(),
         thruster_flames: Vec::new(),
+        moons: Vec::new(),
         gravity_strength: 0.0,
         gravity_radius: 50.0,
         visible_gravity: false,
@@ -368,6 +429,7 @@ fn test_moon_orbital_mechanics_relative_to_parent() {
         debris_rings: Vec::new(),
         components: Vec::new(),
         thruster_flames: Vec::new(),
+        moons: Vec::new(),
         gravity_strength: 0.0,
         gravity_radius: 12.0,
         visible_gravity: false,
