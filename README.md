@@ -116,6 +116,7 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
 - **`EmissiveShader`**: Emisión luminosa constante sin atenuación por ángulo solar (Sol).
 - **`TexturedDiffuseShader`**: Muestreo UV con iluminación direccional difusa de Lambert.
 - **`ProceduralRockShader`**: Texturizado procedural con ruido multifractal determinista (`seed = 67`) que rota solidariamente con el planeta.
+- **`EarthLikeShader`**: Texturizado procedural de biosfera / planeta terrestre que sintetiza continentes verdes, masas oceánicas azules con reflectividad especular y casquetes polares de nieve, rotando solidariamente con el planeta e inclinación axial de 23.5°.
 - **`PlasmaShader`**: Patrón armónico de convección solar animado continuamente con el tiempo transcurrido ($dt$).
 - **`ToonShader`**: Cel-shading estilo anime con cuantización en bandas de color discretas y silueta exterior (*rim lighting*).
 - **`SkyShader`**: Fondo estelar infinito procedural en CPU sensible a la rotación 3D de la cámara.
@@ -381,3 +382,6 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 | **Escombros orbitales** | `assets/models/objects/escombro1/` y `escombro2/` | Dos variantes reutilizadas en el anillo del planeta destruido | Modelos creados por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Planeta Kirby** | `assets/models/kirby_planet/` y `assets/sources/kirby_planet/` | Plataforma orbital, propulsor y personaje compuesto por cuerpo, pies, ojos y boca | Modelado y ensamblado por Juanda en Blender; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Luna Homero** | `assets/models/homer/homero.obj` / `homero.mtl` | Cuerpo celeste compuesto satelital (5 submallas multi-material) que orbita el planeta dona | Modelo 3D exportado desde Blender con materiales para piel, ojos, camisa, boca y pelo |
+| **Planeta Terrestre** | `assets/models/rocky/rocky.obj` | Planeta biosfera verde con manchas oceánicas azules sombreado analíticamente con `EarthLikeShader` | Reutilización de malla esférica con nuevo shader procedural CPU continuo y tilt axial de 23.5° |
+| **Árboles de Superficie** | `assets/models/objects/trees/` | Robles (`Oak_Tree_Summer.obj`) y pinos (`Pine_Tree_2_Summer.obj`) distribuidos en la corteza terrestre | Modelos OBJ con materiales MTL de vegetación integrados con Espiral de Fibonacci y autoenraizamiento |
+| **Ciudad de Superficie** | `assets/models/objects/city/` | Casas (`house.obj`), edificios altos (`building.obj`) y fábricas (`factory.obj`) | Estructuras urbanas de baja poligonización con orientación perpendicular a la esfera |
