@@ -18,6 +18,10 @@ yaw_speed = 1.8
 pitch_speed = 1.5
 roll_speed = 2.0
 collision_radius = 0.6
+boost_acceleration = 28.0
+boost_max_speed = 48.0
+boost_release_drag = 1.8
+boost_flame_multiplier = 1.65
 
   [[ship.thruster_flames]]
   position = [-4.12, 0.0, -3.45]
@@ -91,6 +95,8 @@ shader = "plasma"
 gravity_strength = 20.0
 gravity_radius = 35.0
 visible_gravity = false
+damage_radius = 65.0
+max_damage_per_second = 30.0
 
 [[planets]]
 id = "rocoso"
@@ -173,6 +179,9 @@ rotation_period = 42.0
 initial_orbital_angle_deg = 300.0
 collision_margin = 3.5
 shader = "normal_mapped"
+gravity_strength = 8.0
+gravity_radius = 25.0
+visible_gravity = false
 
   [[planets.components]]
   name = "Propulsor"
@@ -202,6 +211,17 @@ shader = "normal_mapped"
   animation_speed = 4.5
   idle_intensity = 1.0
   active_intensity = 1.0
+
+  [[planets.moons]]
+  name = "Estrella"
+  model_path = "assets/models/kirby_planet/star_moon/Star_Moon.obj"
+  radius = 3.2
+  orbital_radius = 22.0
+  orbital_period = 36.0
+  rotation_period = 8.0
+  initial_orbital_angle_deg = 45.0
+  orbit_tilt_deg = 25.0
+  collision_margin = 0.3
 
 [[planets]]
 id = "dona"

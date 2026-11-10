@@ -1,11 +1,23 @@
 use space_travel::buffer::{Color, Framebuffer};
-use space_travel::hud::{draw_aim_reticle, draw_health_bar, project_world_to_screen};
+use space_travel::hud::{
+    draw_aim_reticle, draw_health_bar, draw_speed_streaks, project_world_to_screen,
+};
 use space_travel::math::{Mat4, Vec3};
 
 #[test]
 fn identity_projection_maps_origin_to_screen_center() {
     let projected = project_world_to_screen(&Mat4::IDENTITY, Vec3::zero(), 100, 80);
     assert_eq!(projected, Some((50, 40)));
+}
+
+#[test]
+fn speed_streaks_are_deterministic_and_clip_safely() {
+    let mut first = Framebuffer::new(96, 72);
+    let mut second = Framebuffer::new(96, 72);
+    draw_speed_streaks(&mut first, 1.25, 16);
+    draw_speed_streaks(&mut second, 1.25, 16);
+    assert_eq!(first.as_bytes(), second.as_bytes());
+    assert!(first.as_bytes().chunks_exact(4).any(|pixel| pixel[0] > 0));
 }
 
 #[test]

@@ -109,6 +109,41 @@ pub fn draw_aim_reticle(framebuffer: &mut Framebuffer, center_x: i32, center_y: 
     draw_diamond(framebuffer, center_x, center_y, 1, core);
 }
 
+/// Dibuja líneas radiales animadas durante el acelerador directamente en el framebuffer CPU.
+pub fn draw_speed_streaks(framebuffer: &mut Framebuffer, sim_time: f32, count: usize) {
+    if count == 0 || framebuffer.width == 0 || framebuffer.height == 0 {
+        return;
+    }
+    let center_x = framebuffer.width as f32 * 0.5;
+    let center_y = framebuffer.height as f32 * 0.5;
+    let max_radius = framebuffer.width.min(framebuffer.height) as f32 * 0.62;
+    let min_radius = max_radius * 0.34;
+    let travel = max_radius - min_radius;
+    let golden_angle = 2.399_963_1_f32;
+
+    for index in 0..count {
+        let angle = index as f32 * golden_angle + (index % 3) as f32 * 0.17;
+        let phase = (sim_time * 1.9 + index as f32 * 0.137).fract();
+        let end_radius = min_radius + travel * phase;
+        let length = 16.0 + 30.0 * phase;
+        let start_radius = (end_radius - length).max(min_radius * 0.8);
+        let (sin, cos) = angle.sin_cos();
+        let start_x = (center_x + cos * start_radius) as i32;
+        let start_y = (center_y + sin * start_radius * 0.75) as i32;
+        let end_x = (center_x + cos * end_radius) as i32;
+        let end_y = (center_y + sin * end_radius * 0.75) as i32;
+        draw_thick_segment(
+            framebuffer,
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+            1,
+            Color::rgb(175, 220, 255),
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_thick_segment(
     framebuffer: &mut Framebuffer,

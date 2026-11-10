@@ -107,6 +107,16 @@ impl CombatSystem {
         self.player_destroyed_at = None;
     }
 
+    /// Aplica daño de cualquier fuente y retorna la cantidad efectiva descontada.
+    pub fn apply_player_damage(&mut self, damage: f32) -> f32 {
+        if damage <= 0.0 || !damage.is_finite() || !self.player_is_alive() {
+            return 0.0;
+        }
+        let applied = damage.min(self.player_health);
+        self.player_health -= applied;
+        applied
+    }
+
     pub fn deactivate(&mut self) {
         self.state = EncounterState::Dormant;
         self.enemies.clear();

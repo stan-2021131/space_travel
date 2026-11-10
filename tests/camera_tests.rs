@@ -18,6 +18,10 @@ fn dummy_ship_config() -> ShipConfig {
         pitch_speed: 1.5,
         roll_speed: 1.5,
         collision_radius: 0.6,
+        boost_acceleration: 20.0,
+        boost_max_speed: 35.0,
+        boost_release_drag: 1.8,
+        boost_flame_multiplier: 1.65,
         thruster_flames: Vec::new(),
     }
 }

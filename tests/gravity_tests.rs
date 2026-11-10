@@ -18,6 +18,10 @@ fn dummy_ship_config() -> ShipConfig {
         pitch_speed: 1.5,
         roll_speed: 2.0,
         collision_radius: 0.6,
+        boost_acceleration: 28.0,
+        boost_max_speed: 120.0,
+        boost_release_drag: 1.8,
+        boost_flame_multiplier: 1.65,
         thruster_flames: Vec::new(),
     }
 }
@@ -169,6 +173,7 @@ fn test_planet_effective_gravity_radius_default_and_explicit() {
         debris_rings: Vec::new(),
         components: Vec::new(),
         thruster_flames: Vec::new(),
+        moons: Vec::new(),
     };
     assert_eq!(
         p_default.effective_gravity_radius(),

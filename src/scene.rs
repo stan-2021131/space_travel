@@ -4,8 +4,10 @@ use crate::mesh::Mesh;
 use std::sync::Arc;
 
 pub mod debris_ring;
+pub mod moon;
 pub mod surface;
 pub use debris_ring::{DebrisInstance, DebrisRing};
+pub use moon::Moon;
 pub use surface::{
     SurfaceGroup, SurfaceInstance, calculate_surface_embedding, create_surface_instance,
     generate_torus_surface_distribution,
@@ -71,7 +73,7 @@ impl ThrusterFlame {
     }
 
     pub fn local_model_matrix(&self, intensity: f32, flicker: f32) -> Mat4 {
-        let intensity = intensity.clamp(0.05, 1.0);
+        let intensity = intensity.clamp(0.05, 2.5);
         Mat4::from_translation(self.position)
             * self.rotation
             * Mat4::scaling(
@@ -106,6 +108,7 @@ pub struct CelestialBody {
     pub debris_rings: Vec<DebrisRing>,
     pub components: Vec<CelestialComponent>,
     pub thruster_flames: Vec<ThrusterFlame>,
+    pub moons: Vec<Moon>,
     pub gravity_strength: f32,
     pub gravity_radius: f32,
     pub visible_gravity: bool,

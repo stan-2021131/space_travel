@@ -19,6 +19,8 @@ fn test_valid_configuration_loading() {
     assert!(config.simulation.fixed_timestep > 0.0);
     assert!(config.ship.max_speed > 0.0);
     assert_eq!(config.ship.thruster_flames.len(), 2);
+    assert_eq!(config.ship.boost_max_speed, 48.0);
+    assert_eq!(config.sun.damage_radius, 65.0);
     assert!(config.enemies.initial_count > 0);
     assert!(config.enemies.player_max_health > 0.0);
     assert_eq!(config.enemies.peace_after_no_fire_seconds, 20.0);
@@ -45,6 +47,8 @@ fn test_valid_configuration_loading() {
         .expect("Debe existir el planeta Kirby");
     assert_eq!(kirby.components.len(), 5);
     assert_eq!(kirby.thruster_flames.len(), 1);
+    assert_eq!(kirby.moons.len(), 1);
+    assert_eq!(kirby.gravity_strength, 8.0);
     assert_eq!(kirby.radius + kirby.collision_margin, 13.5);
 }
 
@@ -81,6 +85,14 @@ fn test_invalid_configuration_rejections() {
     let mut bad_ship_flame = valid.clone();
     bad_ship_flame.ship.thruster_flames[0].length = 0.0;
     assert!(bad_ship_flame.validate(Path::new("test.toml")).is_err());
+
+    let mut bad_boost = valid.clone();
+    bad_boost.ship.boost_max_speed = bad_boost.ship.max_speed;
+    assert!(bad_boost.validate(Path::new("test.toml")).is_err());
+
+    let mut bad_solar_damage = valid.clone();
+    bad_solar_damage.sun.damage_radius = bad_solar_damage.sun.radius;
+    assert!(bad_solar_damage.validate(Path::new("test.toml")).is_err());
 
     let mut bad_enemies = valid.clone();
     bad_enemies.enemies.initial_count = 0;
@@ -172,6 +184,10 @@ fn test_invalid_configuration_rejections() {
     let mut bad_kirby_flame = valid.clone();
     bad_kirby_flame.planets[kirby_index].thruster_flames[0].animation_speed = f32::NAN;
     assert!(bad_kirby_flame.validate(Path::new("test.toml")).is_err());
+
+    let mut bad_moon_orbit = valid.clone();
+    bad_moon_orbit.planets[kirby_index].moons[0].orbital_radius = 1.0;
+    assert!(bad_moon_orbit.validate(Path::new("test.toml")).is_err());
 }
 
 #[test]

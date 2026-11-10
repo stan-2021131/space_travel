@@ -4,12 +4,14 @@ use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh
 use crate::config::{AppConfig, ThrusterFlameConfig};
 use crate::hud::{
     draw_aim_reticle, draw_health_bar, draw_orbital_lock_reticle, draw_orbital_mode_badge,
-    project_world_to_screen,
+    draw_speed_streaks, project_world_to_screen,
 };
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
-use crate::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
+use crate::physics::{
+    CollisionSphere, ShipInput, ShipState, resolve_sphere_collision, solar_damage_per_second,
+};
 use crate::pipeline::{
     AlienEnergyShader, BlendMode, DepthDebugShader, EmissiveShader, ForceFieldShader,
     FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
@@ -17,7 +19,7 @@ use crate::pipeline::{
     TexturedDiffuseShader, ThrusterFlameShader, ToonShader,
 };
 use crate::scene::{
-    CelestialBody, CelestialComponent, DebrisRing, ThrusterFlame,
+    CelestialBody, CelestialComponent, DebrisRing, Moon, ThrusterFlame,
     surface::{
         SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
         generate_spherical_distribution, generate_torus_surface_distribution,
@@ -156,6 +158,7 @@ impl App {
             debris_rings: Vec::new(),
             components: Vec::new(),
             thruster_flames: Vec::new(),
+            moons: Vec::new(),
             gravity_strength: config.sun.gravity_strength,
             gravity_radius: sun_effective_grav_radius,
             visible_gravity: config.sun.visible_gravity,
@@ -304,6 +307,28 @@ impl App {
                 .iter()
                 .map(Self::create_thruster_flame)
                 .collect();
+            let mut moons = Vec::with_capacity(p_cfg.moons.len());
+            for moon_cfg in &p_cfg.moons {
+                println!(
+                    "[RECURSOS] Cargando luna '{}' para planeta '{}': {}",
+                    moon_cfg.name, p_cfg.id, moon_cfg.model_path
+                );
+                let moon_mesh = Arc::new(Mesh::load_from_obj(Path::new(&moon_cfg.model_path))?);
+                let moon_scale = moon_cfg.radius / moon_mesh.geometric_radius().max(1e-4);
+                moons.push(Moon {
+                    name: moon_cfg.name.clone(),
+                    material: moon_mesh.material.clone(),
+                    mesh: moon_mesh,
+                    scale: moon_scale,
+                    radius: moon_cfg.radius,
+                    orbital_radius: moon_cfg.orbital_radius,
+                    orbital_period: moon_cfg.orbital_period,
+                    rotation_period: moon_cfg.rotation_period,
+                    initial_orbital_angle_rad: deg_to_rad(moon_cfg.initial_orbital_angle_deg),
+                    orbit_tilt_rad: deg_to_rad(moon_cfg.orbit_tilt_deg),
+                    collision_margin: moon_cfg.collision_margin,
+                });
+            }
 
             planets.push(CelestialBody {
                 id: p_cfg.id.clone(),
@@ -323,6 +348,7 @@ impl App {
                 debris_rings,
                 components,
                 thruster_flames,
+                moons,
                 gravity_strength: p_cfg.gravity_strength,
                 gravity_radius: p_effective_grav_radius,
                 visible_gravity: p_cfg.visible_gravity,
@@ -460,6 +486,7 @@ impl App {
         println!("============================================================");
         println!("[CONTROLES DE VUELO]");
         println!("  [W]              : Acelerar hacia adelante");
+        println!("  [Shift Izq. + W] : Activar acelerador de alta velocidad");
         println!("  [S]              : Frenar / Aplicar reversa");
         println!("  [A] / [D]        : Yaw (Giro horizontal)");
         println!("  [Flecha Arriba]  : Pitch arriba");
@@ -649,6 +676,7 @@ impl App {
             pitch_down: rl.is_key_down(KeyboardKey::KEY_DOWN),
             roll_left: rl.is_key_down(KeyboardKey::KEY_Q),
             roll_right: rl.is_key_down(KeyboardKey::KEY_E),
+            boost: rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT),
             fire: rl.is_key_down(KeyboardKey::KEY_SPACE),
         }
     }
@@ -662,6 +690,8 @@ impl App {
         self.enemy_shader.set_time(self.sim_time);
         self.ship_thrust_state = if !self.combat.player_is_alive() {
             0.0
+        } else if input.boost && input.throttle_forward {
+            2.0
         } else if input.throttle_forward {
             1.0
         } else if input.throttle_reverse {
@@ -753,6 +783,17 @@ impl App {
             );
         }
 
+        if self.combat.player_is_alive() {
+            let sun_distance = (self.ship_state.position - self.sun_body.position).length();
+            let damage_per_second = solar_damage_per_second(
+                sun_distance,
+                self.sun_body.radius + self.sun_body.collision_margin,
+                self.config.sun.damage_radius,
+                self.config.sun.max_damage_per_second,
+            );
+            self.combat.apply_player_damage(damage_per_second * dt);
+        }
+
         let combat_update = self.combat.update(
             self.sim_time,
             dt,
@@ -812,8 +853,13 @@ impl App {
             .flat_map(|planet| &planet.debris_rings)
             .map(|ring| ring.instances.len())
             .sum::<usize>();
+        let moon_count = self
+            .planets
+            .iter()
+            .map(|planet| planet.moons.len())
+            .sum::<usize>();
         let mut obstacles =
-            Vec::with_capacity(1 + self.planets.len() + surface_count + debris_count);
+            Vec::with_capacity(1 + self.planets.len() + surface_count + debris_count + moon_count);
 
         obstacles.push(CollisionSphere::new(
             self.sun_body.position,
@@ -852,6 +898,13 @@ impl App {
                     let radius = mesh.geometric_radius() * instance.scale + ring.collision_margin;
                     obstacles.push(CollisionSphere::new(center, radius));
                 }
+            }
+
+            for moon in &planet.moons {
+                obstacles.push(CollisionSphere::new(
+                    moon.world_position(planet.position, self.sim_time),
+                    moon.radius + moon.collision_margin,
+                ));
             }
         }
 
@@ -926,8 +979,14 @@ impl App {
                 .iter()
                 .map(DebrisRing::culling_radius)
                 .fold(0.0f32, f32::max);
+            let moon_extent = planet
+                .moons
+                .iter()
+                .map(Moon::culling_radius)
+                .fold(0.0f32, f32::max);
             let planet_cull_radius = (planet.radius + max_surface_extent)
                 .max(ring_extent)
+                .max(moon_extent)
                 .max(planet.composite_radius())
                 .max(planet.thruster_flame_radius());
             let planet_visible = frustum.intersects_sphere(planet.position, planet_cull_radius);
@@ -951,6 +1010,10 @@ impl App {
                 stats.objetos_descartados_frustum += planet.thruster_flames.len();
                 stats.triangulos_descartados_frustum +=
                     self.thruster_flame_mesh.triangle_count() * planet.thruster_flames.len();
+                for moon in &planet.moons {
+                    stats.objetos_descartados_frustum += 1;
+                    stats.triangulos_descartados_frustum += moon.mesh.triangle_count();
+                }
                 continue;
             }
 
@@ -1077,7 +1140,33 @@ impl App {
                 );
             }
 
-            // 2.3 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
+            // 2.3 Lunas: acompañan la traslación del planeta con órbita y giro independientes.
+            for moon in &planet.moons {
+                let moon_position = moon.world_position(planet.position, self.sim_time);
+                if !frustum.intersects_sphere(moon_position, moon.radius) {
+                    stats.objetos_descartados_frustum += 1;
+                    stats.triangulos_descartados_frustum += moon.mesh.triangle_count();
+                    continue;
+                }
+                let (moon_model, moon_rotation) = moon.matrices(planet.position, self.sim_time);
+                Self::draw_mesh(
+                    &mut self.renderer,
+                    self.shader_mode,
+                    &self.depth_shader,
+                    &self.normals_shader,
+                    &self.toon_shader,
+                    &self.planet_shader,
+                    &moon.mesh,
+                    &moon_model,
+                    &moon_rotation,
+                    &vp_matrix,
+                    &moon.material,
+                    &mut target,
+                    stats,
+                );
+            }
+
+            // 2.4 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
             for group in &planet.surface_groups {
                 let dist_to_planet_center = (self.camera.eye - planet.position).length();
                 let dist_to_surface = (dist_to_planet_center - planet.radius).max(0.0);
@@ -1142,7 +1231,7 @@ impl App {
                 }
             }
 
-            // 2.4 Anillos de escombros: comparten la traslación orbital del planeta,
+            // 2.5 Anillos de escombros: comparten la traslación orbital del planeta,
             // pero su revolución y el giro de cada pieza dependen de periodos propios.
             for ring in &planet.debris_rings {
                 for instance in &ring.instances {
@@ -1273,7 +1362,9 @@ impl App {
                 );
 
                 for flame in &self.ship_thruster_flames {
-                    let intensity = if self.ship_thrust_state > 0.5 {
+                    let intensity = if self.ship_thrust_state > 1.5 {
+                        flame.active_intensity * self.config.ship.boost_flame_multiplier
+                    } else if self.ship_thrust_state > 0.5 {
                         flame.active_intensity
                     } else if self.ship_thrust_state < -0.5 {
                         flame.idle_intensity * 0.45
@@ -1342,6 +1433,10 @@ impl App {
                 self.renderer
                     .render_mesh(field_mesh, &ctx, &mut target, stats);
             }
+        }
+
+        if self.ship_thrust_state > 1.5 && self.combat.player_is_alive() {
+            draw_speed_streaks(&mut self.framebuffer, self.sim_time, 16);
         }
 
         // Las barras se dibujan al final como overlay del framebuffer CPU.
