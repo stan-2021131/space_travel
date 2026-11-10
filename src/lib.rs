@@ -7,6 +7,7 @@ pub mod hud;
 pub mod material;
 pub mod math;
 pub mod mesh;
+pub mod particles;
 pub mod physics;
 pub mod pipeline;
 pub mod procedural;
@@ -26,7 +27,11 @@ pub use hud::{
 pub use material::Material;
 pub use math::{Mat4, Transform, Vec2, Vec3, Vec4};
 pub use mesh::{AABB, Mesh, Vertex};
-pub use physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
+pub use particles::{SparkParticle, SparkSystem};
+pub use physics::{
+    CollisionContact, CollisionSphere, ShipInput, ShipState, resolve_sphere_collision,
+    resolve_sphere_collision_with_rebound,
+};
 pub use pipeline::{
     AlienEnergyShader, DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput,
     FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,

@@ -9,7 +9,10 @@ use crate::hud::{
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
-use crate::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
+use crate::particles::SparkSystem;
+use crate::physics::{
+    CollisionSphere, ShipInput, ShipState, resolve_sphere_collision_with_rebound,
+};
 use crate::pipeline::{
     AlienEnergyShader, BlendMode, DepthDebugShader, DiffuseShader, EmissiveShader,
     ForceFieldShader, FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader,
@@ -49,6 +52,7 @@ pub struct App {
     ship_thruster_flames: Vec<ThrusterFlame>,
     thruster_flame_material: Material,
     pub combat: CombatSystem,
+    pub sparks: SparkSystem,
 
     sun_body: CelestialBody,
     pub dyson_sphere: Option<DysonSphere>,
@@ -62,6 +66,8 @@ pub struct App {
     pub local_flight_mode: bool,
     pub nearby_planet_idx: Option<usize>,
     ship_thrust_state: f32,
+    pub impact_shake_timer: f32,
+    pub impact_shake_intensity: f32,
 
     // Shaders reutilizables
     planet_shader: TexturedDiffuseShader,
@@ -412,6 +418,7 @@ impl App {
             ship_thruster_flames,
             thruster_flame_material: Material::new("ThrusterFlame", Vec3::new(1.0, 1.0, 1.0), None),
             combat,
+            sparks: SparkSystem::new(512),
             sun_body,
             dyson_sphere,
             planets,
@@ -422,6 +429,8 @@ impl App {
             local_flight_mode: false,
             nearby_planet_idx: None,
             ship_thrust_state: 0.0,
+            impact_shake_timer: 0.0,
+            impact_shake_intensity: 0.0,
             planet_shader: TexturedDiffuseShader::new(Vec3::zero()),
             normal_mapped_shader,
             rock_shader,
@@ -772,18 +781,45 @@ impl App {
             }
         }
 
+        self.impact_shake_timer = (self.impact_shake_timer - dt).max(0.0);
+
         // Envolventes compartidas: Sol, planetas y objetos de superficie.
         let obstacles = self.collect_collision_obstacles();
         if self.combat.player_is_alive() {
             for &obstacle in &obstacles {
-                resolve_sphere_collision(
+                if let Some(contact) = resolve_sphere_collision_with_rebound(
                     &mut self.ship_state.position,
                     &mut self.ship_state.velocity,
                     self.ship_state.collision_radius,
                     obstacle,
-                );
+                    0.70,
+                ) && contact.impact_speed > 1.5
+                {
+                    let shake_power = (contact.impact_speed * 0.035).clamp(0.06, 0.35);
+                    self.impact_shake_timer = 0.16;
+                    self.impact_shake_intensity = shake_power;
+
+                    if let Some(damage) = self.combat.apply_collision_damage(contact.impact_speed) {
+                        println!(
+                            "[COLISIÓN] Impacto a {:.1} u/s. Daño: {:.1}. Vida: {:.0}/{:.0}",
+                            contact.impact_speed,
+                            damage,
+                            self.combat.player_health,
+                            self.config.enemies.player_max_health
+                        );
+                    }
+                    let spark_count = ((contact.impact_speed * 5.0) as usize).clamp(36, 72);
+                    self.sparks.emit_sparks(
+                        contact.point,
+                        contact.normal,
+                        spark_count,
+                        contact.impact_speed,
+                    );
+                }
             }
         }
+
+        self.sparks.update(dt);
 
         if input.fire && self.combat.player_is_alive() {
             self.combat.try_player_fire(
@@ -909,28 +945,46 @@ impl App {
 
     /// Renderiza todos los cuerpos de la escena continua en el framebuffer propio en CPU.
     pub fn render_scene(&mut self, stats: &mut FrameStats) {
+        // Sacudida de impacto (Screen Shake) en la cámara para retroalimentación visual contundente
+        let active_camera = if self.impact_shake_timer > 0.0 {
+            let shake_amp = self.impact_shake_intensity * (self.impact_shake_timer / 0.16);
+            let shake_freq = self.sim_time * 45.0;
+            let forward = (self.camera.target - self.camera.eye).normalize();
+            let right = forward.cross(self.camera.up).normalize();
+            let shake_offset = self.camera.up * (shake_freq.sin() * shake_amp * 0.35)
+                + right * ((shake_freq * 1.30).cos() * shake_amp * 0.45);
+
+            let mut cam = self.camera;
+            cam.eye += shake_offset;
+            cam.target += shake_offset;
+            cam
+        } else {
+            self.camera
+        };
+
         if self.shader_mode == ShaderMode::DepthDebug
             || self.shader_mode == ShaderMode::NormalsDebug
         {
             self.framebuffer.clear(crate::buffer::Color::BLACK);
         } else {
-            self.sky_shader.render(&mut self.framebuffer, &self.camera);
+            self.sky_shader
+                .render(&mut self.framebuffer, &active_camera);
         }
         self.depth_buffer.clear();
 
-        let vp_matrix = self.camera.view_projection_matrix();
-        let frustum = self.camera.frustum();
-        self.toon_shader.camera_pos = self.camera.eye;
+        let vp_matrix = active_camera.view_projection_matrix();
+        let frustum = active_camera.frustum();
+        self.toon_shader.camera_pos = active_camera.eye;
         self.toon_shader.light_pos = self.sun_body.position;
-        self.ship_shader.camera_pos = self.camera.eye;
+        self.ship_shader.camera_pos = active_camera.eye;
         self.ship_shader.light_pos = self.sun_body.position;
-        self.enemy_shader.camera_pos = self.camera.eye;
+        self.enemy_shader.camera_pos = active_camera.eye;
         self.enemy_shader.light_pos = self.sun_body.position;
         self.plasma_shader.sun_center = self.sun_body.position;
         self.rock_shader.light_pos = self.sun_body.position;
         self.planet_shader.light_pos = self.sun_body.position;
         self.normal_mapped_shader.light_pos = self.sun_body.position;
-        self.normal_mapped_shader.camera_pos = self.camera.eye;
+        self.normal_mapped_shader.camera_pos = active_camera.eye;
 
         let mut target = RenderTarget {
             framebuffer: &mut self.framebuffer,
@@ -1160,7 +1214,7 @@ impl App {
 
             // 2.3 Objetos de superficie del planeta (con descarte por distancia, horizonte y frustum individual)
             for group in &planet.surface_groups {
-                let dist_to_planet_center = (self.camera.eye - planet.position).length();
+                let dist_to_planet_center = (active_camera.eye - planet.position).length();
                 let dist_to_surface = (dist_to_planet_center - planet.radius).max(0.0);
 
                 // Descarte lejano O(1): si la cámara está fuera del radio de visibilidad, omitir todo el grupo
@@ -1182,7 +1236,7 @@ impl App {
                     // Descarte de cara oculta/horizonte del planeta: si el objeto se ubica en el hemisferio
                     // posterior respecto a la cámara, el cuerpo sólido opaco del planeta lo oculta por completo.
                     let world_normal = p_rot.transform_direction(instance.local_normal);
-                    let to_cam_from_center = self.camera.eye - planet.position;
+                    let to_cam_from_center = active_camera.eye - planet.position;
                     if world_normal.dot(to_cam_from_center) < -0.15 {
                         continue;
                     }
@@ -1383,7 +1437,7 @@ impl App {
         }
 
         // 5. Esferas semitransparentes de campo gravitatorio / atmósfera (Alpha Blending)
-        self.force_field_shader.camera_pos = self.camera.eye;
+        self.force_field_shader.camera_pos = active_camera.eye;
         self.force_field_shader.sim_time = self.sim_time;
         let field_material = Material::default();
 
@@ -1424,6 +1478,10 @@ impl App {
                     .render_mesh(field_mesh, &ctx, &mut target, stats);
             }
         }
+
+        // 6. Sistema de partículas (chispas incandescentes de colisión en CPU con Z-test)
+        self.sparks
+            .render(&mut self.framebuffer, &self.depth_buffer, &vp_matrix);
 
         // Las barras se dibujan al final como overlay del framebuffer CPU.
         Self::draw_entity_health_bars(
