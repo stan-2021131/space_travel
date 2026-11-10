@@ -398,7 +398,7 @@ fn test_toml_donut_planet_parsing() {
 
     assert_eq!(dona.model_path, "assets/models/donut/donut_8.obj");
     assert!((dona.radius - 45.0).abs() < 1e-4);
-    assert!((dona.orbital_radius - 320.0).abs() < 1e-4);
+    assert!((dona.orbital_radius - 450.0).abs() < 1e-4);
     assert!((dona.axial_tilt_deg - 30.0).abs() < 1e-4);
     assert!(dona.visible_gravity, "Debe tener campo de fuerza visible");
     assert_eq!(

@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub camera: CameraConfig,
     pub sun: SunConfig,
     pub planets: Vec<PlanetConfig>,
+    #[serde(default)]
+    pub dyson_sphere: Option<DysonSphereConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -143,6 +145,44 @@ pub struct DebrisRingConfig {
     pub max_spin_period: f32,
     #[serde(default)]
     pub collision_margin: f32,
+}
+
+fn default_dyson_enabled() -> bool {
+    true
+}
+
+fn default_dyson_rotation_speed() -> f32 {
+    0.025
+}
+
+fn default_dyson_gravity_strength() -> f32 {
+    6.0
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DysonSphereConfig {
+    #[serde(default = "default_dyson_enabled")]
+    pub enabled: bool,
+    pub model_path: String,
+    pub radius: f32,
+    #[serde(default = "default_dyson_rotation_speed")]
+    pub rotation_speed: f32,
+    #[serde(default)]
+    pub collision_radius: Option<f32>,
+    #[serde(default)]
+    pub gravity_radius: Option<f32>,
+    #[serde(default = "default_dyson_gravity_strength")]
+    pub gravity_strength: f32,
+}
+
+impl DysonSphereConfig {
+    pub fn effective_collision_radius(&self) -> f32 {
+        self.collision_radius.unwrap_or(self.radius)
+    }
+
+    pub fn effective_gravity_radius(&self) -> f32 {
+        self.gravity_radius.unwrap_or(self.radius * 1.45)
+    }
 }
 
 fn default_surface_count() -> usize {
@@ -421,6 +461,29 @@ impl AppConfig {
                         p, planet.id
                     ));
                 }
+            }
+        }
+
+        if let Some(ref dyson) = self.dyson_sphere
+            && dyson.enabled
+        {
+            if !dyson.radius.is_finite() || dyson.radius <= 0.0 {
+                return Err(format!(
+                    "[{}] Radio de la Esfera de Dyson debe ser finito y mayor a 0",
+                    p
+                ));
+            }
+            if dyson.model_path.trim().is_empty() {
+                return Err(format!(
+                    "[{}] model_path de la Esfera de Dyson no puede estar vacío",
+                    p
+                ));
+            }
+            if !dyson.gravity_strength.is_finite() || dyson.gravity_strength < 0.0 {
+                return Err(format!(
+                    "[{}] Gravedad de la Esfera de Dyson debe ser finita y no negativa",
+                    p
+                ));
             }
         }
 

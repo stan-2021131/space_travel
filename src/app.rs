@@ -11,13 +11,13 @@ use crate::math::{Mat4, Vec3, deg_to_rad};
 use crate::mesh::Mesh;
 use crate::physics::{CollisionSphere, ShipInput, ShipState, resolve_sphere_collision};
 use crate::pipeline::{
-    AlienEnergyShader, BlendMode, DepthDebugShader, EmissiveShader, ForceFieldShader,
-    FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
-    RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
-    TexturedDiffuseShader, ToonShader,
+    AlienEnergyShader, BlendMode, DepthDebugShader, DiffuseShader, EmissiveShader,
+    ForceFieldShader, FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader,
+    ProceduralRockShader, RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader,
+    SoftwareRenderer, TexturedDiffuseShader, ToonShader,
 };
 use crate::scene::{
-    CelestialBody, DebrisRing,
+    CelestialBody, DebrisRing, DysonSphere,
     surface::{
         SurfaceGroup, calculate_fade_factor, calculate_surface_embedding,
         generate_spherical_distribution, generate_torus_surface_distribution,
@@ -48,6 +48,7 @@ pub struct App {
     pub combat: CombatSystem,
 
     sun_body: CelestialBody,
+    pub dyson_sphere: Option<DysonSphere>,
     planets: Vec<CelestialBody>,
 
     // Estado de simulación
@@ -63,6 +64,7 @@ pub struct App {
     normal_mapped_shader: NormalMappedShader,
     rock_shader: ProceduralRockShader,
     plasma_shader: PlasmaShader,
+    diffuse_shader: DiffuseShader,
     force_field_shader: ForceFieldShader,
     ship_shader: ShipShader,
     enemy_shader: AlienEnergyShader,
@@ -148,6 +150,31 @@ impl App {
             visible_gravity: config.sun.visible_gravity,
             axial_tilt_rad: 0.0,
             gravity_mesh: sun_grav_mesh,
+        };
+
+        // 1.b Esfera de Dyson (si está habilitada en la configuración)
+        let dyson_sphere = if let Some(ref d_cfg) = config.dyson_sphere {
+            if d_cfg.enabled {
+                println!(
+                    "[RECURSOS] Cargando modelo de Esfera de Dyson: {}",
+                    d_cfg.model_path
+                );
+                let dyson_submeshes = Mesh::load_models_from_obj(Path::new(&d_cfg.model_path))?;
+                let dyson_meshes = dyson_submeshes.into_iter().map(Arc::new).collect();
+
+                Some(DysonSphere::new(
+                    dyson_meshes,
+                    d_cfg.radius,
+                    d_cfg.rotation_speed,
+                    d_cfg.effective_collision_radius(),
+                    d_cfg.effective_gravity_radius(),
+                    d_cfg.gravity_strength,
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
         };
 
         let mut planets = Vec::new();
@@ -328,6 +355,7 @@ impl App {
 
         let rock_shader = ProceduralRockShader::new(config.simulation.seed, sun_body.position);
         let plasma_shader = PlasmaShader::new();
+        let diffuse_shader = DiffuseShader::new();
         let toon_shader = ToonShader::new(sun_body.position, camera.eye);
         let ship_shader = ShipShader::new(sun_body.position, camera.eye);
         let normal_mapped_shader = NormalMappedShader::new(sun_body.position, camera.eye);
@@ -348,6 +376,7 @@ impl App {
             projectile_mesh,
             combat,
             sun_body,
+            dyson_sphere,
             planets,
             sim_time: 0.0,
             accumulator: 0.0,
@@ -359,6 +388,7 @@ impl App {
             normal_mapped_shader,
             rock_shader,
             plasma_shader,
+            diffuse_shader,
             force_field_shader: ForceFieldShader::new(camera.eye),
             ship_shader,
             enemy_shader,
@@ -620,6 +650,9 @@ impl App {
 
         // Órbitas y rotación axial calculadas analíticamente por tiempo
         self.sun_body.update(self.sim_time);
+        if let Some(ref mut dyson) = self.dyson_sphere {
+            dyson.update(dt);
+        }
         for planet in &mut self.planets {
             planet.update(self.sim_time);
         }
@@ -660,6 +693,15 @@ impl App {
                 self.sun_body.gravity_strength,
                 dt,
             );
+            if let Some(ref dyson) = self.dyson_sphere {
+                self.ship_state.apply_gravitational_attraction(
+                    self.sun_body.position,
+                    dyson.radius,
+                    dyson.gravity_radius,
+                    dyson.gravity_strength,
+                    dt,
+                );
+            }
             for planet in &self.planets {
                 self.ship_state.apply_gravitational_attraction(
                     planet.position,
@@ -761,6 +803,13 @@ impl App {
             self.sun_body.radius + self.sun_body.collision_margin,
         ));
 
+        if let Some(ref dyson) = self.dyson_sphere {
+            obstacles.push(CollisionSphere::new(
+                self.sun_body.position,
+                dyson.collision_radius,
+            ));
+        }
+
         for planet in &self.planets {
             obstacles.push(CollisionSphere::new(
                 planet.position,
@@ -829,7 +878,39 @@ impl App {
             depth_buffer: &mut self.depth_buffer,
         };
 
-        // 1. Sol (Shader animado de plasma con Frustum Culling)
+        // 1. Esfera de Dyson (se dibuja antes del Sol para que su estructura opaca
+        // escriba en el Z-buffer y descarte por Early-Z los fragmentos cubiertos del costoso PlasmaShader)
+        if let Some(ref dyson) = self.dyson_sphere {
+            let dyson_cull_radius = dyson.radius * 1.05;
+
+            if frustum.intersects_sphere(self.sun_body.position, dyson_cull_radius) {
+                let dyson_model = dyson.model_matrix(self.sun_body.position);
+                let dyson_rot = dyson.rotation_matrix();
+
+                // Cada submalla de la esfera se dibuja con su respectivo material cargado del MTL
+                for mesh in &dyson.meshes {
+                    Self::draw_mesh(
+                        &mut self.renderer,
+                        self.shader_mode,
+                        &self.depth_shader,
+                        &self.normals_shader,
+                        &self.toon_shader,
+                        &self.diffuse_shader,
+                        mesh,
+                        &dyson_model,
+                        &dyson_rot,
+                        &vp_matrix,
+                        &mesh.material,
+                        &mut target,
+                        stats,
+                    );
+                }
+            } else {
+                stats.objetos_descartados_frustum += 1;
+            }
+        }
+
+        // 2. Sol (Shader animado de plasma con Frustum Culling y descarte Early-Z tras la Esfera de Dyson)
         if !frustum.intersects_sphere(self.sun_body.position, self.sun_body.radius) {
             stats.objetos_descartados_frustum += 1;
             stats.triangulos_descartados_frustum += self.sun_body.mesh.indices.len() / 3;

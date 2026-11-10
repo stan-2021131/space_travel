@@ -4,8 +4,10 @@ use crate::mesh::Mesh;
 use std::sync::Arc;
 
 pub mod debris_ring;
+pub mod dyson;
 pub mod surface;
 pub use debris_ring::{DebrisInstance, DebrisRing};
+pub use dyson::DysonSphere;
 pub use surface::{
     SurfaceGroup, SurfaceInstance, calculate_surface_embedding, create_surface_instance,
     generate_torus_surface_distribution,
