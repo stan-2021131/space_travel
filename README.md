@@ -83,12 +83,18 @@ Para garantizar consistencia numérica sin parámetros sin uso:
 - **Velocidad Máxima**: Clamping de la magnitud de la velocidad a `max_speed` ($28.0\text{ WU/s}$).
 - **Orientación**: Rotaciones angulares aplicadas sobre los ángulos de Euler locales (guiñada, cabeceo y alabeo).
 
-### Respuesta Inelástica a Colisiones con Deslizamiento Tangencial
-Cuando la nave entra dentro del radio de influencia de un cuerpo ($d < R_{body} + \text{margin}$):
-1. **Reposicionamiento Radial**: La posición de la nave se traslada a lo largo del vector normal $\hat{n} = \frac{\vec{p}_{ship} - \vec{p}_{body}}{\|\vec{p}_{ship} - \vec{p}_{body}\|}$ a la distancia exacta $R_{body} + \text{margin}$, impidiendo que atraviese la superficie. En caso de coincidencia exacta de centros, se proyecta sobre $+Y$ (`Vec3::up()`) para evitar indeterminaciones numéricas ($\text{NaN}$).
-2. **Eliminación de Velocidad Entrante**: Si la nave se aproxima al cuerpo ($\vec{v} \cdot \hat{n} < 0$), la componente normal de aproximación se anula:
-   $$\vec{v}' = \vec{v} - (\vec{v} \cdot \hat{n}) \hat{n}$$
-3. **Conservación de la Componente Tangencial**: La velocidad perpendicular a la normal se conserva en su totalidad, permitiendo que la nave se deslice de forma fluida a lo largo de la superficie del planeta o del Sol.
+### Respuesta a Colisiones: Rebote Físico, Deslizamiento y Daño
+Cuando una entidad entra dentro del radio de influencia de un cuerpo ($d < R_{body} + \text{margin}$):
+1. **Reposicionamiento Radial**: La posición se traslada a lo largo del vector normal $\hat{n} = \frac{\vec{p} - \vec{p}_{body}}{\|\vec{p} - \vec{p}_{body}\|}$ a la distancia exacta $R_{body} + \text{margin}$, impidiendo que atraviese la superficie. En caso de coincidencia exacta de centros, se proyecta sobre $+Y$ (`Vec3::up()`) para evitar indeterminaciones numéricas ($\text{NaN}$).
+2. **Rebote con Restitución o Deslizamiento**:
+   - **Nave del jugador**: Se aplica restitución elástica parcial $e = 0.70$ mediante `resolve_sphere_collision_with_rebound`:
+     $$\vec{v}' = \vec{v} - (\vec{v} \cdot \hat{n})\hat{n}(1 + e)$$
+     generando un rebote reactivo en la dirección normal mientras se conserva la velocidad tangencial.
+   - **Naves enemigas**: Se mantiene restitución inelástica pura ($e = 0.0$), anulando la componente entrante y permitiendo el deslizamiento tangencial alrededor del obstáculo.
+3. **Retroalimentación de Impacto (Screen Shake, Chispas y Daño)**:
+   - Si la velocidad de impacto entrante supera $1.5\text{ WU/s}$, se activa una sacudida de pantalla (*Screen Shake*) en la cámara amortiguada en función del tiempo.
+   - Si la velocidad supera $2.0\text{ WU/s}$, la nave sufre daño de colisión acotado entre $3.0$ y $10.0$ puntos con inmunidad temporal ($0.45\text{ s}$) para evitar drenado continuo.
+   - En el punto de contacto se emite un estallido de chispas incandescentes en CPU (`SparkSystem`) con dispersión cónica alrededor de la normal.
 
 ### Equilibrio de Gravedad para Exploración
 
@@ -286,7 +292,8 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 - **Anillo de Escombros Orbitales** (`debris_ring_tests.rs`): Distribución determinista y acotada de variantes, repetición exacta de la revolución tras su periodo, seguimiento de la traslación del planeta, giro individual independiente y carga íntegra de albedo y normal map para el planeta destruido y ambos escombros.
 - **Componentes Celestes** (`celestial_component_tests.rs`): Carga y presupuesto exacto de los seis componentes del planeta Kirby, materiales esperados, transformación padre compartida y cobertura completa del radio compuesto mediante la esfera de colisión aprobada.
 - **Llamas de Propulsión** (`thruster_flame_tests.rs`): Presupuesto geométrico procedural, atributos finitos, animación determinista del shader y orientación correcta respecto a los propulsores de Kirby y la nave.
-- **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
+- **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, resolución inelástica con deslizamiento tangencial y resolución elástica con restitución parcial ($e = 0.70$) con velocidad de impacto.
+- **Sistema de Partículas y Chispas en CPU** (`particles_tests.rs`): Emisión cónica de partículas de impacto, ciclo de vida con decaimiento por arrastre proporcional a $dt$, acotamiento de capacidad máxima sin asignaciones dinámicas en caliente, enfriamiento térmico dinámico, renderizado aditivo saturado y prueba de profundidad estricta contra el Z-buffer (+ margen de tolerancia) para evitar oclusión por la propia superficie.
 - **Atracción Gravitatoria Planetaria** (`gravity_tests.rs`): Validación de la atracción gravitatoria newtoniana en `ShipState::apply_gravitational_attraction`, decaimiento cúbico suave (*smoothstep*) en los límites de la esfera de influencia, aceleración cero fuera del radio o con fuerza nula, protección contra singularidades en la superficie del astro y cálculo de radio efectivo por defecto vs. explícito en TOML.
 - **Cámara y Modos de Persecución** (`camera_tests.rs` y `local_flight_tests.rs`): Suavizado exponencial de traslación y orientación en tercera persona, modo panorámico centrado en planetas con encuadre orbital óptimo, cálculo de distancias de compromiso y retención de controles de vuelo libre durante la aproximación.
 - **Elementos de HUD e Interfaz** (`hud_tests.rs`): Proyección analítica mundo a pantalla ($MVP \to NDC \to Viewport$), retículas de puntería, indicadores de enganche orbital y barras de estado renderizadas directamente al framebuffer en CPU.
