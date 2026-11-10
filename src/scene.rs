@@ -4,8 +4,10 @@ use crate::mesh::Mesh;
 use std::sync::Arc;
 
 pub mod debris_ring;
+pub mod dyson;
 pub mod surface;
 pub use debris_ring::{DebrisInstance, DebrisRing};
+pub use dyson::DysonSphere;
 pub use surface::{
     SurfaceGroup, SurfaceInstance, calculate_surface_embedding, create_surface_instance,
     generate_torus_surface_distribution,
@@ -90,6 +92,7 @@ impl ThrusterFlame {
 #[derive(Debug, Clone)]
 pub struct CelestialBody {
     pub id: String,
+    pub parent_id: Option<String>,
     pub mesh: Arc<Mesh>,
     pub material: Material,
     pub scale: f32,
@@ -114,21 +117,30 @@ pub struct CelestialBody {
 }
 
 impl CelestialBody {
-    /// Actualiza la posición orbital en el plano XZ y la rotación axial en Y según el tiempo de simulación.
-    pub fn update(&mut self, sim_time: f32) {
+    /// Actualiza la posición orbital en el plano XZ y la rotación axial en Y según el tiempo de simulación,
+    /// orbitando alrededor de un centro arbitrario (por defecto el origen para planetas, o la posición del padre para lunas).
+    pub fn update_with_parent_position(&mut self, sim_time: f32, center: Vec3) {
         let tau = std::f32::consts::TAU;
         if self.orbital_radius > 0.0 && self.orbital_period > 0.0 {
             let orbit_angle =
                 self.initial_orbital_angle_rad + (tau / self.orbital_period) * sim_time;
-            self.position = Vec3::new(
-                self.orbital_radius * orbit_angle.cos(),
-                0.0,
-                self.orbital_radius * orbit_angle.sin(),
-            );
+            self.position = center
+                + Vec3::new(
+                    self.orbital_radius * orbit_angle.cos(),
+                    0.0,
+                    self.orbital_radius * orbit_angle.sin(),
+                );
+        } else {
+            self.position = center;
         }
         if self.rotation_period > 0.0 {
             self.rotation_rad = (tau / self.rotation_period) * sim_time;
         }
+    }
+
+    /// Actualiza la posición orbital en el plano XZ y la rotación axial en Y según el tiempo de simulación con centro en el origen.
+    pub fn update(&mut self, sim_time: f32) {
+        self.update_with_parent_position(sim_time, Vec3::zero());
     }
 
     /// Retorna la matriz de modelo completa para colocar el cuerpo en el mundo: $M = T \cdot R \cdot S$.

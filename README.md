@@ -9,6 +9,7 @@ Proyecto final del curso de **Gráficas por Computadora (2026)**. Consiste en un
 El proyecto implementa un sistema solar interactivo tridimensional, continuo, navegable y gobernado por configuración declarativa:
 - **Cuerpo Central (Sol)**: Malla esférica geodésica ubicada en el origen $(0, 0, 0)$ renderizada con shaders CPU (emisivo o plasma animado) que simulan autoiluminación y dinámica térmica solar.
 - **Planetas y Cuerpos Celestes**: Cuerpos que orbitan en el plano XZ y rotan sobre su eje Y según periodos físicos parametrizados, con texturas PNG o shaders procedurales en CPU. El planeta destruido incorpora un anillo inclinado de escombros con revolución y giro individual independientes.
+- **Lunas y Órbitas Jerárquicas**: Cuerpos celestes secundarios que orbitan alrededor de su planeta padre (como la luna Homero orbitando la dona gigante), calculando su centro orbital analíticamente a partir de la traslación dinámica del astro padre.
 - **Nave Espacial y Navegación**: Modelo 3D centrado y escalado a unidades de mundo (WU), pilotable en 6 grados de libertad angulares con aceleración progresiva, frenado e inercia arcade basada estrictamente en tiempo ($dt$).
 - **Cámara de Persecución Suave**: Cámara en tercera persona posicionada a una distancia fija detrás y arriba de la nave, orientada hacia un punto adelantado de mira y amortiguada exponencialmente.
 - **Detección y Respuesta a Colisiones**: Resolución analítica inelástica contra las esferas de colisión de los astros, cancelando la velocidad entrante, preservando la componente tangencial y permitiendo el deslizamiento suave sobre la superficie.
@@ -73,6 +74,11 @@ Para garantizar consistencia numérica sin parámetros sin uso:
   $$M_{\text{body}} = T(\vec{p}) \cdot R_y(\phi) \cdot S(r)$$
   Asegura que la orientación de las superficies y objetos secundarios acompañen de forma rígida y solidaria el giro planetario.
 
+### Órbitas Satelitales Jerárquicas (Lunas)
+Los cuerpos celestes que declaran un astro padre mediante `parent_id` (como la luna Homero alrededor del planeta dona) componen su posición jerárquicamente en $O(1)$:
+$$\vec{p}_{\text{luna}}(t) = \vec{p}_{\text{padre}}(t) + (r_{\text{orb}} \cos\theta, 0, r_{\text{orb}} \sin\theta)$$
+El centro orbital acompaña rígidamente la traslación del astro padre mientras la luna describe su revolución y rotación axial independientes. Los modelos 3D multi-material (como Homero con 5 submallas de piel, ojos, camisa, boca y pelo) se dividen automáticamente al cargar y se articulan como submallas rígidas coordinadas bajo la misma matriz de modelo.
+
 ---
 
 ## 6. Dinámica de Vuelo y Colisiones (`physics.rs`)
@@ -83,12 +89,18 @@ Para garantizar consistencia numérica sin parámetros sin uso:
 - **Velocidad Máxima**: Clamping de la magnitud de la velocidad a `max_speed` ($28.0\text{ WU/s}$).
 - **Orientación**: Rotaciones angulares aplicadas sobre los ángulos de Euler locales (guiñada, cabeceo y alabeo).
 
-### Respuesta Inelástica a Colisiones con Deslizamiento Tangencial
-Cuando la nave entra dentro del radio de influencia de un cuerpo ($d < R_{body} + \text{margin}$):
-1. **Reposicionamiento Radial**: La posición de la nave se traslada a lo largo del vector normal $\hat{n} = \frac{\vec{p}_{ship} - \vec{p}_{body}}{\|\vec{p}_{ship} - \vec{p}_{body}\|}$ a la distancia exacta $R_{body} + \text{margin}$, impidiendo que atraviese la superficie. En caso de coincidencia exacta de centros, se proyecta sobre $+Y$ (`Vec3::up()`) para evitar indeterminaciones numéricas ($\text{NaN}$).
-2. **Eliminación de Velocidad Entrante**: Si la nave se aproxima al cuerpo ($\vec{v} \cdot \hat{n} < 0$), la componente normal de aproximación se anula:
-   $$\vec{v}' = \vec{v} - (\vec{v} \cdot \hat{n}) \hat{n}$$
-3. **Conservación de la Componente Tangencial**: La velocidad perpendicular a la normal se conserva en su totalidad, permitiendo que la nave se deslice de forma fluida a lo largo de la superficie del planeta o del Sol.
+### Respuesta a Colisiones: Rebote Físico, Deslizamiento y Daño
+Cuando una entidad entra dentro del radio de influencia de un cuerpo ($d < R_{body} + \text{margin}$):
+1. **Reposicionamiento Radial**: La posición se traslada a lo largo del vector normal $\hat{n} = \frac{\vec{p} - \vec{p}_{body}}{\|\vec{p} - \vec{p}_{body}\|}$ a la distancia exacta $R_{body} + \text{margin}$, impidiendo que atraviese la superficie. En caso de coincidencia exacta de centros, se proyecta sobre $+Y$ (`Vec3::up()`) para evitar indeterminaciones numéricas ($\text{NaN}$).
+2. **Rebote con Restitución o Deslizamiento**:
+   - **Nave del jugador**: Se aplica restitución elástica parcial $e = 0.70$ mediante `resolve_sphere_collision_with_rebound`:
+     $$\vec{v}' = \vec{v} - (\vec{v} \cdot \hat{n})\hat{n}(1 + e)$$
+     generando un rebote reactivo en la dirección normal mientras se conserva la velocidad tangencial.
+   - **Naves enemigas**: Se mantiene restitución inelástica pura ($e = 0.0$), anulando la componente entrante y permitiendo el deslizamiento tangencial alrededor del obstáculo.
+3. **Retroalimentación de Impacto (Screen Shake, Chispas y Daño)**:
+   - Si la velocidad de impacto entrante supera $1.5\text{ WU/s}$, se activa una sacudida de pantalla (*Screen Shake*) en la cámara amortiguada en función del tiempo.
+   - Si la velocidad supera $2.0\text{ WU/s}$, la nave sufre daño de colisión acotado entre $3.0$ y $10.0$ puntos con inmunidad temporal ($0.45\text{ s}$) para evitar drenado continuo.
+   - En el punto de contacto se emite un estallido de chispas incandescentes en CPU (`SparkSystem`) con dispersión cónica alrededor de la normal.
 
 ### Equilibrio de Gravedad para Exploración
 
@@ -104,6 +116,7 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
 - **`EmissiveShader`**: Emisión luminosa constante sin atenuación por ángulo solar (Sol).
 - **`TexturedDiffuseShader`**: Muestreo UV con iluminación direccional difusa de Lambert.
 - **`ProceduralRockShader`**: Texturizado procedural con ruido multifractal determinista (`seed = 67`) que rota solidariamente con el planeta.
+- **`EarthLikeShader`**: Texturizado procedural de biosfera / planeta terrestre que sintetiza continentes verdes, masas oceánicas azules con reflectividad especular y casquetes polares de nieve, rotando solidariamente con el planeta e inclinación axial de 23.5°.
 - **`PlasmaShader`**: Patrón armónico de convección solar animado continuamente con el tiempo transcurrido ($dt$).
 - **`ToonShader`**: Cel-shading estilo anime con cuantización en bandas de color discretas y silueta exterior (*rim lighting*).
 - **`SkyShader`**: Fondo estelar infinito procedural en CPU sensible a la rotación 3D de la cámara.
@@ -286,7 +299,8 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 - **Anillo de Escombros Orbitales** (`debris_ring_tests.rs`): Distribución determinista y acotada de variantes, repetición exacta de la revolución tras su periodo, seguimiento de la traslación del planeta, giro individual independiente y carga íntegra de albedo y normal map para el planeta destruido y ambos escombros.
 - **Componentes Celestes** (`celestial_component_tests.rs`): Carga y presupuesto exacto de los seis componentes del planeta Kirby, materiales esperados, transformación padre compartida y cobertura completa del radio compuesto mediante la esfera de colisión aprobada.
 - **Llamas de Propulsión** (`thruster_flame_tests.rs`): Presupuesto geométrico procedural, atributos finitos, animación determinista del shader y orientación correcta respecto a los propulsores de Kirby y la nave.
-- **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, y resolución analítica inelástica de colisiones con conservación de velocidad tangencial.
+- **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal, fricción, velocidad máxima, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody`, resolución inelástica con deslizamiento tangencial y resolución elástica con restitución parcial ($e = 0.70$) con velocidad de impacto.
+- **Sistema de Partículas y Chispas en CPU** (`particles_tests.rs`): Emisión cónica de partículas de impacto, ciclo de vida con decaimiento por arrastre proporcional a $dt$, acotamiento de capacidad máxima sin asignaciones dinámicas en caliente, enfriamiento térmico dinámico, renderizado aditivo saturado y prueba de profundidad estricta contra el Z-buffer (+ margen de tolerancia) para evitar oclusión por la propia superficie.
 - **Atracción Gravitatoria Planetaria** (`gravity_tests.rs`): Validación de la atracción gravitatoria newtoniana en `ShipState::apply_gravitational_attraction`, decaimiento cúbico suave (*smoothstep*) en los límites de la esfera de influencia, aceleración cero fuera del radio o con fuerza nula, protección contra singularidades en la superficie del astro y cálculo de radio efectivo por defecto vs. explícito en TOML.
 - **Cámara y Modos de Persecución** (`camera_tests.rs` y `local_flight_tests.rs`): Suavizado exponencial de traslación y orientación en tercera persona, modo panorámico centrado en planetas con encuadre orbital óptimo, cálculo de distancias de compromiso y retención de controles de vuelo libre durante la aproximación.
 - **Elementos de HUD e Interfaz** (`hud_tests.rs`): Proyección analítica mundo a pantalla ($MVP \to NDC \to Viewport$), retículas de puntería, indicadores de enganche orbital y barras de estado renderizadas directamente al framebuffer en CPU.
@@ -332,7 +346,7 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 |---|---|:---:|:---:|---|
 | **Base Habilitante** | Renderer 3D propio en CPU (Sin funciones 3D de Raylib) | Requisito | 0 | Implementado y Validado |
 | **Base Habilitante** | Carga y dibujo con MVP, Z-Buffer y Shader en CPU | Requisito | 0 | Implementado y Validado |
-| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **50** | **Reclamado**: 5 planetas con órbita, rotación sobre eje y exploración cercana: Rocoso, Destruido con anillos, Asteroide Procedural, Kirby compuesto y Dona gigante con campo de fuerza |
+| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **50** | **Reclamado**: 5 planetas principales con órbita, rotación sobre eje y exploración cercana: Rocoso, Destruido con anillos, Asteroide Procedural, Kirby compuesto y Dona gigante (más luna satelital Homero en órbita jerárquica) |
 | **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **20** | **Reclamado**: 5 modelos propios de superficie: Montaña (`Mountain_1_LOD_High.obj`), Pastel (`cake_slice.obj`), Galleta (`cookie.obj`), Helado (`ice_cream_cone.obj`) y Paleta (`lollipop.obj`) |
 | **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | **Reclamado**: Espiral de Fibonacci esférica determinista y distribución azimutal toroidal sobre corteza superior (`seed = 67`) |
 | **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica y normal tangencial de toroide |
@@ -367,3 +381,7 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 | **Planeta Destruido** | `assets/models/destroyed/` | Segundo planeta explorable, con geometría fragmentada, albedo y normal map | Modelo creado por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Escombros orbitales** | `assets/models/objects/escombro1/` y `escombro2/` | Dos variantes reutilizadas en el anillo del planeta destruido | Modelos creados por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Planeta Kirby** | `assets/models/kirby_planet/` y `assets/sources/kirby_planet/` | Plataforma orbital, propulsor y personaje compuesto por cuerpo, pies, ojos y boca | Modelado y ensamblado por Juanda en Blender; texturas generadas con asistencia de Gemini y revisadas por el equipo |
+| **Luna Homero** | `assets/models/homer/homero.obj` / `homero.mtl` | Cuerpo celeste compuesto satelital (5 submallas multi-material) que orbita el planeta dona | Modelo 3D exportado desde Blender con materiales para piel, ojos, camisa, boca y pelo |
+| **Planeta Terrestre** | `assets/models/rocky/rocky.obj` | Planeta biosfera verde con manchas oceánicas azules sombreado analíticamente con `EarthLikeShader` | Reutilización de malla esférica con nuevo shader procedural CPU continuo y tilt axial de 23.5° |
+| **Árboles de Superficie** | `assets/models/objects/trees/` | Robles (`Oak_Tree_Summer.obj`) y pinos (`Pine_Tree_2_Summer.obj`) distribuidos en la corteza terrestre | Modelos OBJ con materiales MTL de vegetación integrados con Espiral de Fibonacci y autoenraizamiento |
+| **Ciudad de Superficie** | `assets/models/objects/city/` | Casas (`house.obj`), edificios altos (`building.obj`) y fábricas (`factory.obj`) | Estructuras urbanas de baja poligonización con orientación perpendicular a la esfera |

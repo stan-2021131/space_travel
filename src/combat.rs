@@ -68,6 +68,7 @@ pub struct CombatSystem {
     pub enemies: Vec<Enemy>,
     pub projectiles: Vec<Projectile>,
     pub player_health: f32,
+    pub collision_immunity_timer: f32,
     pub wave: u32,
     next_enemy_id: u32,
     next_player_fire_time: f32,
@@ -84,6 +85,7 @@ impl CombatSystem {
             enemies: Vec::new(),
             projectiles: Vec::new(),
             player_health: config.player_max_health,
+            collision_immunity_timer: 0.0,
             wave: 0,
             next_enemy_id: 1,
             next_player_fire_time: 0.0,
@@ -105,6 +107,21 @@ impl CombatSystem {
     pub fn restore_player_health(&mut self, config: &EnemyConfig) {
         self.player_health = config.player_max_health;
         self.player_destroyed_at = None;
+        self.collision_immunity_timer = 0.0;
+    }
+
+    /// Aplica un daño leve a la nave tras una colisión contra un obstáculo rígido
+    /// si la velocidad de impacto supera un umbral mínimo. Cuenta con tiempo de gracia (inmunidad)
+    /// para evitar que múltiples contactos por cuadro drenen toda la vida.
+    pub fn apply_collision_damage(&mut self, impact_speed: f32) -> Option<f32> {
+        if self.collision_immunity_timer <= 0.0 && impact_speed > 2.0 && self.player_is_alive() {
+            let damage = (3.0 + (impact_speed - 2.0) * 0.4).clamp(3.0, 10.0);
+            self.player_health = (self.player_health - damage).max(0.0);
+            self.collision_immunity_timer = 0.45;
+            Some(damage)
+        } else {
+            None
+        }
     }
 
     pub fn deactivate(&mut self) {
@@ -183,6 +200,10 @@ impl CombatSystem {
         config: &EnemyConfig,
     ) -> CombatUpdate {
         let mut result = CombatUpdate::default();
+
+        if self.collision_immunity_timer > 0.0 {
+            self.collision_immunity_timer = (self.collision_immunity_timer - dt).max(0.0);
+        }
 
         if let Some(destroyed_at) = self.player_destroyed_at
             && now - destroyed_at >= config.player_respawn_delay
