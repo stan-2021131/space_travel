@@ -4,8 +4,8 @@ use std::time::Instant;
 /// Modos de presentación de estadísticas en consola controlados mediante la tecla F3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StatsDisplayMode {
-    Off,
     #[default]
+    Off,
     Compact,
     Detailed,
 }
@@ -38,7 +38,7 @@ impl DiagnosticControls {
     pub fn new() -> Self {
         Self {
             shader_mode: ShaderMode::Normal,
-            stats_mode: StatsDisplayMode::Compact,
+            stats_mode: StatsDisplayMode::Off,
         }
     }
 
@@ -85,6 +85,9 @@ pub struct StatsTracker {
     frame_count: usize,
     accumulated: FrameStats,
     pub display_mode: StatsDisplayMode,
+    pub current_fps: f32,
+    pub current_frame_time_ms: f32,
+    pub last_frame_stats: FrameStats,
 }
 
 impl StatsTracker {
@@ -93,7 +96,10 @@ impl StatsTracker {
             last_print_time: Instant::now(),
             frame_count: 0,
             accumulated: FrameStats::default(),
-            display_mode: StatsDisplayMode::Compact,
+            display_mode: StatsDisplayMode::Off,
+            current_fps: 60.0,
+            current_frame_time_ms: 16.6,
+            last_frame_stats: FrameStats::default(),
         }
     }
 
@@ -115,6 +121,7 @@ impl StatsTracker {
         surface_dist_wu: f32,
     ) {
         self.frame_count += 1;
+        self.last_frame_stats = current;
         self.accumulated.modelos_procesados += current.modelos_procesados;
         self.accumulated.vertices_procesados += current.vertices_procesados;
         self.accumulated.triangulos_entrada += current.triangulos_entrada;
@@ -129,11 +136,14 @@ impl StatsTracker {
         self.accumulated.frame_time_ms += current.frame_time_ms;
 
         let elapsed = self.last_print_time.elapsed().as_secs_f32();
-        if elapsed >= 1.0 {
+        if elapsed >= 0.5 {
+            let count = self.frame_count.max(1);
+            let fps = self.frame_count as f32 / elapsed;
+            let avg_frame_time = self.accumulated.frame_time_ms / count as f32;
+            self.current_fps = fps;
+            self.current_frame_time_ms = avg_frame_time;
+
             if self.display_mode != StatsDisplayMode::Off {
-                let count = self.frame_count.max(1);
-                let fps = self.frame_count as f32 / elapsed;
-                let avg_frame_time = self.accumulated.frame_time_ms / count as f32;
                 let avg_models = self.accumulated.modelos_procesados / count;
                 let avg_in_tris = self.accumulated.triangulos_entrada / count;
                 let avg_clip_gen = self.accumulated.triangulos_generados_clipping / count;

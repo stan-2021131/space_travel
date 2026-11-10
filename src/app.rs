@@ -3,8 +3,8 @@ use crate::camera::Camera;
 use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh};
 use crate::config::{AppConfig, ThrusterFlameConfig};
 use crate::hud::{
-    draw_aim_reticle, draw_health_bar, draw_orbital_lock_reticle, draw_orbital_mode_badge,
-    draw_speed_streaks, project_world_to_screen,
+    HudContext, PlanetMarker, draw_health_bar, draw_orbital_lock_reticle, draw_speed_streaks,
+    project_world_to_screen, render_hud,
 };
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
@@ -90,10 +90,13 @@ pub struct App {
     normals_shader: NormalsDebugShader,
 
     pub stats_tracker: StatsTracker,
+    pub show_controls: bool,
+    pub show_stats_panel: bool,
+    pub first_person: bool,
 }
 
 impl App {
-    pub const WINDOW_WIDTH: usize = 960;
+    pub const WINDOW_WIDTH: usize = 1280;
     pub const WINDOW_HEIGHT: usize = 720;
 
     pub fn new(config_path: &Path) -> Result<Self, String> {
@@ -522,6 +525,9 @@ impl App {
             depth_shader,
             normals_shader: NormalsDebugShader,
             stats_tracker: StatsTracker::new(),
+            show_controls: true,
+            show_stats_panel: false,
+            first_person: false,
         })
     }
 
@@ -576,13 +582,15 @@ impl App {
         println!(
             "  [C]              : Alternar modo de control local orbital (cerca de un planeta)"
         );
+        println!("  [V]              : Alternar cámara (Cabina 1ra Persona / Persecución 3ra)");
+        println!("  [H] / [F1]       : Ocultar / Mostrar panel de controles HUD");
         println!("  [Espacio]        : Disparar");
         println!("  [F4]             : Activar/desactivar encuentro con enemigos");
         println!(
             "  [F2]             : Alternar modo de shader (Normal -> Toon -> Depth -> Normals)"
         );
         println!(
-            "  [F3]             : Alternar modo de estadísticas (Compacto -> Detallado -> Off)"
+            "  [F3]             : Alternar panel de estadísticas HUD (FPS, tiempos, geometrías)"
         );
         println!("  [Escape]         : Cerrar aplicación");
         println!("============================================================");
@@ -606,8 +614,16 @@ impl App {
                 steps += 1;
             }
 
-            // 3. Suavizado de la cámara de persecución (modo normal detrás de la nave o panorámico centrado en el planeta)
-            if self.local_flight_mode
+            // 3. Suavizado de la cámara (modo cabina 1ra persona, panorámico centrado en planeta, o persecución 3ra persona)
+            if self.first_person {
+                let cockpit_pos = self.ship_state.position
+                    + self.ship_state.forward() * 0.9
+                    + self.ship_state.up() * 0.25;
+                let look_target = cockpit_pos + self.ship_state.forward() * 50.0;
+                self.camera.eye = cockpit_pos;
+                self.camera.target = look_target;
+                self.camera.up = self.ship_state.up();
+            } else if self.local_flight_mode
                 && let Some(idx) = self.nearby_planet_idx
                 && let Some(planet) = self.planets.get(idx)
             {
@@ -673,6 +689,7 @@ impl App {
             self.cycle_shader_mode();
         }
         if is_f3 {
+            self.show_stats_panel = !self.show_stats_panel;
             self.stats_tracker.cycle_mode();
         }
     }
@@ -720,6 +737,30 @@ impl App {
             }
         }
 
+        if rl.is_key_pressed(KeyboardKey::KEY_V) {
+            self.first_person = !self.first_person;
+            println!(
+                "[CÁMARA] Vista: {}",
+                if self.first_person {
+                    "CABINA 1RA PERSONA"
+                } else {
+                    "PERSECUCIÓN 3RA PERSONA"
+                }
+            );
+        }
+
+        if rl.is_key_pressed(KeyboardKey::KEY_H) || rl.is_key_pressed(KeyboardKey::KEY_F1) {
+            self.show_controls = !self.show_controls;
+            println!(
+                "[HUD] Panel de controles: {}",
+                if self.show_controls {
+                    "VISIBLE"
+                } else {
+                    "OCULTO"
+                }
+            );
+        }
+
         if rl.is_key_pressed(KeyboardKey::KEY_F4) {
             if self.combat.encounter_active() {
                 self.combat.deactivate();
@@ -743,6 +784,7 @@ impl App {
         }
 
         if rl.is_key_pressed(KeyboardKey::KEY_F3) {
+            self.show_stats_panel = !self.show_stats_panel;
             self.stats_tracker.cycle_mode();
         }
 
@@ -1541,9 +1583,9 @@ impl App {
             );
         }
 
-        // 4. Nave. Durante la espera de reaparición no se dibuja ni participa
-        // en la simulación; si está viva, conserva el descarte por frustum.
-        if self.combat.player_is_alive() {
+        // 4. Nave. Durante la espera de reaparición o en modo cabina (1ra persona) no se dibuja
+        // la malla exterior de la nave; si está viva y en 3ra persona, conserva el descarte por frustum.
+        if self.combat.player_is_alive() && !self.first_person {
             let ship_radius = self.ship_mesh.geometric_radius() * self.ship_scale;
             if !frustum.intersects_sphere(self.ship_state.position, ship_radius) {
                 stats.objetos_descartados_frustum += 1;
@@ -1654,81 +1696,130 @@ impl App {
         self.sparks
             .render(&mut self.framebuffer, &self.depth_buffer, &vp_matrix);
 
-        // Las barras se dibujan al final como overlay del framebuffer CPU.
-        Self::draw_entity_health_bars(
+        // Las barras flotantes en el mundo se dibujan únicamente sobre las naves enemigas.
+        Self::draw_enemy_health_bars(
             &mut self.framebuffer,
             &vp_matrix,
-            self.ship_state.position,
-            self.combat.player_health,
-            self.config.enemies.player_max_health,
             &self.combat.enemies,
             self.config.enemies.target_length_wu,
         );
 
-        if self.combat.player_is_alive() {
+        let aim_pos = if self.combat.player_is_alive() {
             let forward = self.ship_state.forward();
             let projectile_velocity =
                 self.ship_state.velocity + forward * self.config.enemies.player_projectile_speed;
             let aim_point = self.ship_state.position + forward + projectile_velocity;
-            if let Some((x, y)) = project_world_to_screen(
+            project_world_to_screen(
                 &vp_matrix,
                 aim_point,
                 self.framebuffer.width,
                 self.framebuffer.height,
-            ) {
-                draw_aim_reticle(&mut self.framebuffer, x, y);
-            }
-        }
+            )
+        } else {
+            None
+        };
 
-        // Overlay HUD del Modo Panorámico Planetario
+        // Marcador visual de aproximación orbital sobre el centro del planeta visible
         if let Some(idx) = self.nearby_planet_idx
             && let Some(planet) = self.planets.get(idx)
+            && !self.local_flight_mode
+            && let Some((px, py)) = project_world_to_screen(
+                &vp_matrix,
+                planet.position,
+                self.framebuffer.width,
+                self.framebuffer.height,
+            )
         {
-            // Marcador/brillo sobre el centro del planeta visible al aproximarse
-            if !self.local_flight_mode
-                && let Some((px, py)) = project_world_to_screen(
-                    &vp_matrix,
-                    planet.position,
-                    self.framebuffer.width,
-                    self.framebuffer.height,
-                )
-            {
-                draw_orbital_lock_reticle(&mut self.framebuffer, px, py, false);
-            }
-            draw_orbital_mode_badge(&mut self.framebuffer, 14, 14, self.local_flight_mode);
+            draw_orbital_lock_reticle(&mut self.framebuffer, px, py, false);
         }
+
+        // Proyección analítica de indicadores planetarios dinámicos
+        let mut planet_markers = Vec::with_capacity(self.planets.len());
+        for (idx, planet) in self.planets.iter().enumerate() {
+            let dist = (self.ship_state.position - planet.position).length();
+            let dist_surface = (dist - planet.radius).max(0.0);
+
+            // Proyección del centro del planeta y de su cúspide superior (proporcional al radio del planeta)
+            let center_proj = project_world_to_screen(
+                &vp_matrix,
+                planet.position,
+                self.framebuffer.width,
+                self.framebuffer.height,
+            );
+            // La cúspide superior relativa al vector "up" de la cámara asegura alineación vertical en pantalla
+            let top_world = planet.position + active_camera.up * (planet.radius * 1.06);
+            let top_proj = project_world_to_screen(
+                &vp_matrix,
+                top_world,
+                self.framebuffer.width,
+                self.framebuffer.height,
+            );
+
+            if let (Some((cx, cy)), Some((tx, ty))) = (center_proj, top_proj) {
+                // Radio proyectado en píxeles: distancia euclidiana entre centro y cúspide
+                let dx = cx - tx;
+                let dy = cy - ty;
+                let proj_radius = (dx * dx + dy * dy).isqrt().max(4);
+
+                let is_near = dist_surface <= planet.radius * 6.5;
+                let in_interaction = self.nearby_planet_idx == Some(idx);
+                let is_panoramic = self.local_flight_mode && in_interaction;
+
+                planet_markers.push(PlanetMarker {
+                    id: planet.id.as_str(),
+                    screen_x: tx,
+                    screen_y: ty,
+                    projected_radius: proj_radius,
+                    distance_wu: dist_surface,
+                    is_near,
+                    in_interaction_range: in_interaction,
+                    is_panoramic_active: is_panoramic,
+                });
+            }
+        }
+
+        // Renderizado del HUD de juego modular (desacoplado y ejecutado en CPU)
+        let (nearest_name, nearest_dist) = Self::calculate_nearest_body_distance_from(
+            self.ship_state.position,
+            &self.sun_body,
+            &self.planets,
+        );
+
+        let hud_ctx = HudContext {
+            player_health: self.combat.player_health,
+            player_max_health: self.config.enemies.player_max_health,
+            player_alive: self.combat.player_is_alive(),
+            ship_speed_wu: self.ship_state.velocity.length(),
+            ship_max_speed_wu: self.config.ship.max_speed,
+            combat_state: self.combat.state,
+            nearest_body_name: Some(nearest_name),
+            nearest_body_distance_wu: nearest_dist,
+            is_near_orbit: self.nearby_planet_idx.is_some(),
+            local_flight_mode: self.local_flight_mode,
+            gravity_enabled: self.gravity_enabled,
+            shader_mode: self.shader_mode,
+            show_controls: self.show_controls,
+            show_stats: self.show_stats_panel,
+            current_fps: self.stats_tracker.current_fps,
+            frame_time_ms: self.stats_tracker.current_frame_time_ms,
+            frame_stats: self.stats_tracker.last_frame_stats,
+            first_person: self.first_person,
+            aim_screen_pos: aim_pos,
+            sim_time: self.sim_time,
+            planet_markers: &planet_markers,
+        };
+
+        render_hud(&mut self.framebuffer, &hud_ctx);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn draw_entity_health_bars(
+    fn draw_enemy_health_bars(
         framebuffer: &mut Framebuffer,
         view_projection: &Mat4,
-        ship_position: Vec3,
-        ship_health: f32,
-        ship_max_health: f32,
         enemies: &[Enemy],
         enemy_height: f32,
     ) {
         let width = framebuffer.width;
         let height = framebuffer.height;
-
-        if ship_health > 0.0
-            && let Some((x, y)) = project_world_to_screen(
-                view_projection,
-                ship_position + Vec3::up() * 1.0,
-                width,
-                height,
-            )
-        {
-            draw_health_bar(
-                framebuffer,
-                x,
-                y - 8,
-                54,
-                7,
-                ship_health / ship_max_health.max(1e-6),
-            );
-        }
 
         for enemy in enemies {
             let anchor = enemy.position + Vec3::up() * (enemy_height * 0.65);

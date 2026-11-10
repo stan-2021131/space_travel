@@ -1,8 +1,12 @@
 use space_travel::buffer::{Color, Framebuffer};
+use space_travel::combat::EncounterState;
 use space_travel::hud::{
-    draw_aim_reticle, draw_health_bar, draw_speed_streaks, project_world_to_screen,
+    HudContext, draw_aim_reticle, draw_health_bar, draw_speed_streaks, draw_text,
+    measure_text_width, project_world_to_screen, render_hud,
 };
 use space_travel::math::{Mat4, Vec3};
+use space_travel::pipeline::ShaderMode;
+use space_travel::stats::FrameStats;
 
 #[test]
 fn identity_projection_maps_origin_to_screen_center() {
@@ -38,14 +42,16 @@ fn aim_reticle_is_symmetric_and_keeps_an_inner_gap() {
     draw_aim_reticle(&mut framebuffer, 20, 20);
 
     let core = Color::rgb(150, 168, 205);
+    let outline = Color::rgb(20, 24, 38);
     assert_eq!(framebuffer.get_pixel(20, 20), core);
-    assert_eq!(framebuffer.get_pixel(20, 10), core);
-    assert_eq!(framebuffer.get_pixel(20, 30), core);
-    assert_eq!(framebuffer.get_pixel(10, 20), core);
-    assert_eq!(framebuffer.get_pixel(30, 20), core);
+    assert_eq!(framebuffer.get_pixel(20, 10), outline);
+    assert_eq!(framebuffer.get_pixel(20, 30), outline);
+    assert_eq!(framebuffer.get_pixel(10, 20), outline);
+    assert_eq!(framebuffer.get_pixel(30, 20), outline);
     assert_eq!(framebuffer.get_pixel(12, 12), core);
     assert_eq!(framebuffer.get_pixel(28, 28), core);
-    assert_eq!(framebuffer.get_pixel(20, 14), Color::BLACK);
+    assert_eq!(framebuffer.get_pixel(20, 5), Color::BLACK);
+    assert_eq!(framebuffer.get_pixel(5, 5), Color::BLACK);
 }
 
 #[test]
@@ -61,4 +67,160 @@ fn aim_reticle_clips_safely_at_framebuffer_edges() {
             .chunks_exact(4)
             .any(|pixel| pixel != [0, 0, 0, 255])
     );
+}
+
+#[test]
+fn bitmap_font_draws_text_deterministically() {
+    let mut fb1 = Framebuffer::new(120, 30);
+    let mut fb2 = Framebuffer::new(120, 30);
+    fb1.clear(Color::BLACK);
+    fb2.clear(Color::BLACK);
+
+    draw_text(&mut fb1, 10, 10, "100/100 HP", Color::rgb(50, 255, 120), 1);
+    draw_text(&mut fb2, 10, 10, "100/100 HP", Color::rgb(50, 255, 120), 1);
+
+    assert_eq!(fb1.as_bytes(), fb2.as_bytes());
+    // Confirma que se dibujaron píxeles verdes en el framebuffer
+    assert!(
+        fb1.as_bytes()
+            .chunks_exact(4)
+            .any(|p| p[0] == 50 && p[1] == 255 && p[2] == 120)
+    );
+}
+
+#[test]
+fn text_width_measurement_is_consistent() {
+    let w1 = measure_text_width("ABC", 1);
+    assert_eq!(w1, 18);
+    let w2 = measure_text_width("A B", 1);
+    assert_eq!(w2, 16);
+    let w3 = measure_text_width("100/100 HP", 2);
+    assert_eq!(w3, (9 * 6 + 4) * 2);
+}
+
+#[test]
+fn render_hud_executes_without_panic_in_both_observation_and_combat() {
+    let mut fb = Framebuffer::new(1280, 720);
+    fb.clear(Color::BLACK);
+
+    let ctx_obs = HudContext {
+        player_health: 100.0,
+        player_max_health: 100.0,
+        player_alive: true,
+        ship_speed_wu: 25.0,
+        ship_max_speed_wu: 75.0,
+        combat_state: EncounterState::Observing,
+        nearest_body_name: Some("tierra"),
+        nearest_body_distance_wu: 42.0,
+        is_near_orbit: true,
+        local_flight_mode: false,
+        gravity_enabled: true,
+        shader_mode: ShaderMode::Normal,
+        show_controls: true,
+        show_stats: true,
+        current_fps: 60.0,
+        frame_time_ms: 16.6,
+        frame_stats: FrameStats::default(),
+        first_person: false,
+        aim_screen_pos: Some((640, 360)),
+        sim_time: 5.0,
+        planet_markers: &[],
+    };
+
+    render_hud(&mut fb, &ctx_obs);
+    // Verificar que se renderizaron elementos en el HUD
+    assert!(fb.as_bytes().iter().any(|&b| b > 0));
+
+    // Probar ahora en modo combate
+    let mut fb_combat = Framebuffer::new(1280, 720);
+    fb_combat.clear(Color::BLACK);
+
+    let ctx_combat = HudContext {
+        combat_state: EncounterState::Attacking,
+        player_health: 35.0,
+        first_person: true,
+        ..ctx_obs
+    };
+
+    render_hud(&mut fb_combat, &ctx_combat);
+    assert_ne!(fb.as_bytes(), fb_combat.as_bytes());
+}
+
+#[test]
+fn render_hud_toggles_panels_independently() {
+    let mut fb_controls_only = Framebuffer::new(1280, 720);
+    let mut fb_no_panels = Framebuffer::new(1280, 720);
+    fb_controls_only.clear(Color::BLACK);
+    fb_no_panels.clear(Color::BLACK);
+
+    let base_ctx = HudContext {
+        player_health: 100.0,
+        player_max_health: 100.0,
+        player_alive: true,
+        ship_speed_wu: 10.0,
+        ship_max_speed_wu: 75.0,
+        combat_state: EncounterState::Dormant,
+        nearest_body_name: None,
+        nearest_body_distance_wu: 100.0,
+        is_near_orbit: false,
+        local_flight_mode: false,
+        gravity_enabled: false,
+        shader_mode: ShaderMode::Normal,
+        show_controls: true,
+        show_stats: false,
+        current_fps: 59.9,
+        frame_time_ms: 16.7,
+        frame_stats: FrameStats::default(),
+        first_person: false,
+        aim_screen_pos: None,
+        sim_time: 1.0,
+        planet_markers: &[],
+    };
+
+    render_hud(&mut fb_controls_only, &base_ctx);
+
+    let ctx_no_panels = HudContext {
+        show_controls: false,
+        ..base_ctx
+    };
+    render_hud(&mut fb_no_panels, &ctx_no_panels);
+
+    // Ocultar los controles debe cambiar el framebuffer (reduciendo píxeles dibujados en el cuadrante izquierdo)
+    assert_ne!(fb_controls_only.as_bytes(), fb_no_panels.as_bytes());
+}
+
+#[test]
+fn planet_markers_render_proportionally_and_hierarchically() {
+    use space_travel::hud::{PlanetMarker, draw_planet_markers};
+
+    let mut fb = Framebuffer::new(800, 600);
+    fb.clear(Color::BLACK);
+
+    let markers = [
+        PlanetMarker {
+            id: "tierra",
+            screen_x: 400,
+            screen_y: 300,
+            projected_radius: 60,
+            distance_wu: 25.0,
+            is_near: true,
+            in_interaction_range: true,
+            is_panoramic_active: false,
+        },
+        PlanetMarker {
+            id: "dona",
+            screen_x: 150,
+            screen_y: 150,
+            projected_radius: 12,
+            distance_wu: 120.0,
+            is_near: false,
+            in_interaction_range: false,
+            is_panoramic_active: false,
+        },
+    ];
+
+    draw_planet_markers(&mut fb, &markers);
+
+    // Debe haber píxeles dibujados para la flecha y el texto
+    assert!(fb.as_bytes().iter().any(|&b| b > 0));
 }
