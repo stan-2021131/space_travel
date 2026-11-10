@@ -19,6 +19,24 @@ pitch_speed = 1.5
 roll_speed = 2.0
 collision_radius = 0.6
 
+  [[ship.thruster_flames]]
+  position = [-4.12, 0.0, -3.45]
+  rotation_deg = [0.0, 0.0, 0.0]
+  radius = 0.22
+  length = 3.2
+  animation_speed = 8.0
+  idle_intensity = 0.32
+  active_intensity = 1.0
+
+  [[ship.thruster_flames]]
+  position = [4.12, 0.0, -3.45]
+  rotation_deg = [0.0, 0.0, 0.0]
+  radius = 0.22
+  length = 3.2
+  animation_speed = 8.7
+  idle_intensity = 0.32
+  active_intensity = 1.0
+
 [enemies]
 model_path = "assets/models/enemigos.obj"
 target_length_wu = 3.0
@@ -93,7 +111,7 @@ rotation_period = 15.0
 initial_orbital_angle_deg = 0.0
 collision_margin = 1.0
 shader = "normal_mapped"
-gravity_strength = 18.0
+gravity_strength = 13.0
 gravity_radius = 30.0
 visible_gravity = true
 
@@ -155,6 +173,46 @@ gravity_radius = 12.0
 visible_gravity = false
 
 [[planets]]
+id = "kirby"
+model_path = "assets/models/kirby_planet/platform/platformobj.obj"
+radius = 10.0
+orbital_radius = 205.0
+orbital_period = 210.0
+rotation_period = 42.0
+initial_orbital_angle_deg = 300.0
+collision_margin = 3.5
+shader = "normal_mapped"
+
+  [[planets.components]]
+  name = "Propulsor"
+  model_path = "assets/models/kirby_planet/thruster/thruster.obj"
+
+  [[planets.components]]
+  name = "Cuerpo y brazos"
+  model_path = "assets/models/kirby_planet/kirby_body/kirby_body.obj"
+
+  [[planets.components]]
+  name = "Pies"
+  model_path = "assets/models/kirby_planet/kirby_feet/feet.obj"
+
+  [[planets.components]]
+  name = "Ojos"
+  model_path = "assets/models/kirby_planet/kirby_eyes/eyes.obj"
+
+  [[planets.components]]
+  name = "Boca"
+  model_path = "assets/models/kirby_planet/kirby_mouth/mouth.obj"
+
+  [[planets.thruster_flames]]
+  position = [0.0, -2.52, 0.0]
+  rotation_deg = [-90.0, 0.0, 0.0]
+  radius = 0.85
+  length = 3.2
+  animation_speed = 4.5
+  idle_intensity = 1.0
+  active_intensity = 1.0
+
+[[planets]]
 id = "dona"
 model_path = "assets/models/donut/donut_8.obj"
 radius = 45.0
@@ -165,7 +223,7 @@ initial_orbital_angle_deg = 200.0
 axial_tilt_deg = 30.0
 collision_margin = 1.0
 shader = "texture"
-gravity_strength = 24.0
+gravity_strength = 13.0
 gravity_radius = 85.0
 visible_gravity = true
 

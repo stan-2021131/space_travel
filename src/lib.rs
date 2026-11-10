@@ -31,11 +31,11 @@ pub use pipeline::{
     AlienEnergyShader, DepthDebugShader, DiffuseShader, EmissiveShader, FragmentInput,
     FragmentShader, NormalMappedShader, NormalsDebugShader, PlasmaShader, ProceduralRockShader,
     RenderContext, RenderTarget, ShaderMode, ShipShader, SkyShader, SoftwareRenderer,
-    TexturedDiffuseShader, ToonShader,
+    TexturedDiffuseShader, ThrusterFlameShader, ToonShader,
 };
-pub use procedural::generate_icosphere;
+pub use procedural::{generate_icosphere, generate_thruster_flame};
 pub use scene::{
-    CelestialBody, DebrisInstance, DebrisRing,
+    CelestialBody, CelestialComponent, DebrisInstance, DebrisRing, ThrusterFlame,
     surface::{
         SurfaceGroup, SurfaceInstance, calculate_surface_embedding,
         generate_spherical_distribution, generate_torus_surface_distribution,
