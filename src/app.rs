@@ -1,3 +1,4 @@
+use crate::audio::{MusicSystem, strongest_music_zone};
 use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::camera::Camera;
 use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh};
@@ -66,6 +67,7 @@ pub struct App {
     sun_body: CelestialBody,
     pub dyson_sphere: Option<DysonSphere>,
     planets: Vec<CelestialBody>,
+    music: Option<MusicSystem>,
 
     // Estado de simulación
     sim_time: f32,
@@ -389,10 +391,13 @@ impl App {
                 );
                 let component_mesh =
                     Arc::new(Mesh::load_from_obj(Path::new(&component_cfg.model_path))?);
-                components.push(CelestialComponent::new(
-                    component_cfg.name.clone(),
-                    component_mesh,
-                ));
+                components.push(
+                    CelestialComponent::new(component_cfg.name.clone(), component_mesh)
+                        .with_local_rotation(
+                            component_cfg.local_rotation_period,
+                            deg_to_rad(component_cfg.initial_local_rotation_deg),
+                        ),
+                );
             }
             let thruster_flames = p_cfg
                 .thruster_flames
@@ -509,6 +514,7 @@ impl App {
         let normal_mapped_shader = NormalMappedShader::new(sun_body.position, camera.eye);
         let enemy_shader = AlienEnergyShader::new(sun_body.position, camera.eye);
         let sky_shader = SkyShader::new(config.simulation.seed);
+        let music = MusicSystem::initialize(&config.music)?;
 
         Ok(Self {
             config,
@@ -531,6 +537,7 @@ impl App {
             sun_body,
             dyson_sphere,
             planets,
+            music,
             sim_time: 0.0,
             accumulator: 0.0,
             shader_mode: ShaderMode::Normal,
@@ -640,10 +647,10 @@ impl App {
         println!("============================================================");
 
         while !rl.window_should_close() {
-            let dt = rl
+            let real_dt = rl
                 .get_frame_time()
-                .min(self.config.simulation.max_frame_delta)
-                * self.config.simulation.time_scale;
+                .min(self.config.simulation.max_frame_delta);
+            let dt = real_dt * self.config.simulation.time_scale;
 
             // 1. Manejo de entradas
             let input = self.read_input(&rl);
@@ -712,6 +719,8 @@ impl App {
                 );
             }
 
+            self.update_music(real_dt);
+
             // 4. Renderizado en CPU y medición de métricas
             let frame_start = Instant::now();
             let mut frame_stats = FrameStats::default();
@@ -741,6 +750,31 @@ impl App {
             let mut d = rl.begin_drawing(&thread);
             d.clear_background(raylib::prelude::Color::BLACK);
             d.draw_texture(&screen_texture, 0, 0, raylib::prelude::Color::WHITE);
+        }
+    }
+
+    fn update_music(&mut self, dt: f32) {
+        if self.music.is_none() {
+            return;
+        }
+
+        let selection = strongest_music_zone(
+            self.ship_state.position,
+            &self.config.music.zones,
+            |body_id| {
+                if body_id == self.sun_body.id {
+                    Some((self.sun_body.position, self.sun_body.radius))
+                } else {
+                    self.planets
+                        .iter()
+                        .find(|planet| planet.id == body_id)
+                        .map(|planet| (planet.position, planet.composite_radius()))
+                }
+            },
+        );
+
+        if let Some(music) = &mut self.music {
+            music.update(selection, dt);
         }
     }
 
@@ -1441,7 +1475,10 @@ impl App {
             // 2.1 Componentes rígidos con origen compartido. Usan la misma matriz
             // padre para conservar exactamente el ensamblaje creado en Blender.
             for component in &planet.components {
-                let component_center = p_model.transform_point(component.mesh.aabb.center());
+                let (component_model, component_rotation) =
+                    component.matrices(&p_model, &p_rot, self.sim_time);
+                let component_center =
+                    component_model.transform_point(component.mesh.aabb.center());
                 let component_radius = component.mesh.geometric_radius() * planet.scale;
                 if !frustum.intersects_sphere(component_center, component_radius) {
                     stats.objetos_descartados_frustum += 1;
@@ -1458,8 +1495,8 @@ impl App {
                         &self.toon_shader,
                         &self.normal_mapped_shader,
                         &component.mesh,
-                        &p_model,
-                        &p_rot,
+                        &component_model,
+                        &component_rotation,
                         &vp_matrix,
                         &component.mesh.material,
                         &mut target,
@@ -1474,8 +1511,8 @@ impl App {
                         &self.toon_shader,
                         &self.planet_shader,
                         &component.mesh,
-                        &p_model,
-                        &p_rot,
+                        &component_model,
+                        &component_rotation,
                         &vp_matrix,
                         &component.mesh.material,
                         &mut target,

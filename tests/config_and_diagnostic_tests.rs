@@ -72,11 +72,31 @@ fn test_valid_configuration_loading() {
         .iter()
         .find(|planet| planet.id == "kirby")
         .expect("Debe existir el planeta Kirby");
-    assert_eq!(kirby.components.len(), 5);
+    assert_eq!(kirby.components.len(), 7);
+    let coaster_train = kirby
+        .components
+        .iter()
+        .find(|component| component.name == "Tren de montaña rusa")
+        .expect("Kirby debe incluir el tren animado");
+    assert_eq!(coaster_train.local_rotation_period, 14.0);
     assert_eq!(kirby.thruster_flames.len(), 1);
     assert_eq!(kirby.moons.len(), 1);
     assert_eq!(kirby.gravity_strength, 8.0);
     assert_eq!(kirby.radius + kirby.collision_margin, 13.5);
+    assert!(config.music.enabled);
+    assert_eq!(config.music.general_path, "assets/audio/music/General.ogg");
+    assert_eq!(config.music.crossfade_seconds, 2.5);
+    assert_eq!(config.music.zones.len(), 6);
+    let music_body_ids: Vec<&str> = config
+        .music
+        .zones
+        .iter()
+        .map(|zone| zone.body_id.as_str())
+        .collect();
+    assert_eq!(
+        music_body_ids,
+        ["sol", "tierra", "rocoso", "destruido", "kirby", "dona"]
+    );
 
     let homero = config
         .planets
@@ -261,6 +281,18 @@ fn test_invalid_configuration_rejections() {
             .validate(Path::new("test.toml"))
             .is_err()
     );
+
+    let mut bad_component_animation = valid.clone();
+    bad_component_animation.planets[kirby_index].components[6].local_rotation_period = -1.0;
+    assert!(
+        bad_component_animation
+            .validate(Path::new("test.toml"))
+            .is_err()
+    );
+
+    let mut bad_music_fade = valid.clone();
+    bad_music_fade.music.crossfade_seconds = 0.0;
+    assert!(bad_music_fade.validate(Path::new("test.toml")).is_err());
 
     let mut bad_kirby_flame = valid.clone();
     bad_kirby_flame.planets[kirby_index].thruster_flames[0].animation_speed = f32::NAN;

@@ -1,4 +1,5 @@
 pub mod app;
+pub mod audio;
 pub mod buffer;
 pub mod camera;
 pub mod combat;
@@ -16,6 +17,7 @@ pub mod stats;
 pub mod texture;
 
 pub use app::App;
+pub use audio::{MusicSystem, music_influence, smooth_gain, strongest_music_zone};
 pub use buffer::{Color, DepthBuffer, Framebuffer};
 pub use camera::{Camera, Frustum, Plane};
 pub use combat::{CombatSystem, EncounterState, Enemy, Projectile, ProjectileOwner};
