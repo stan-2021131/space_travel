@@ -40,11 +40,19 @@ pub fn project_world_to_screen(
 // 2. Micro-Fuente Bitmap 5x7 en CPU (Renderizado Autónomo sin GPU/Raylib)
 // ============================================================================
 
-/// Retorna la matriz de 7 filas (5 bits por fila) para caracteres ASCII básicos.
+/// Retorna la matriz de 7 filas (5 bits por fila) para caracteres ASCII y de puntuación.
 #[inline]
 fn get_glyph_rows(c: char) -> [u8; 7] {
-    let upper = c.to_ascii_uppercase();
-    match upper {
+    let normalized = match c {
+        'á' | 'Á' => 'A',
+        'é' | 'É' => 'E',
+        'í' | 'Í' => 'I',
+        'ó' | 'Ó' => 'O',
+        'ú' | 'Ú' => 'U',
+        'ñ' | 'Ñ' => 'N',
+        other => other.to_ascii_uppercase(),
+    };
+    match normalized {
         '0' => [
             0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110,
         ],
@@ -195,6 +203,24 @@ fn get_glyph_rows(c: char) -> [u8; 7] {
         ')' => [
             0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000,
         ],
+        ',' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00110, 0b00100, 0b01000,
+        ],
+        ';' => [
+            0b00000, 0b00110, 0b00110, 0b00000, 0b00110, 0b00100, 0b01000,
+        ],
+        '?' => [
+            0b01110, 0b10001, 0b00010, 0b00100, 0b00100, 0b00000, 0b00100,
+        ],
+        '\'' => [
+            0b00110, 0b00100, 0b01000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        '"' => [
+            0b01010, 0b01010, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        '=' => [
+            0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
         _ => [0b00000; 7],
     }
 }
@@ -264,6 +290,26 @@ pub struct PlanetMarker<'a> {
     pub is_panoramic_active: bool,
 }
 
+/// Datos de inspección telescópica / orbital y registro de historia para la vista panorámica.
+#[derive(Debug, Clone)]
+pub struct CelestialInspectionData<'a> {
+    pub id: &'a str,
+    pub title: &'a str,
+    pub body_type: &'a str,
+    pub radius_wu: f32,
+    pub orbital_period_s: Option<f32>,
+    pub rotation_period_s: f32,
+    pub gravity_strength: f32,
+    pub gravity_radius: f32,
+    pub surface_objects_summary: Option<String>,
+    pub moons_summary: Option<String>,
+    pub rings_summary: Option<String>,
+    pub shader_name: &'a str,
+    pub lore_pages: &'a [String],
+    pub current_page: usize,
+    pub is_story_open: bool,
+}
+
 /// Datos de telemetría y estado de la simulación requeridos para renderizar el HUD.
 #[derive(Debug, Clone)]
 pub struct HudContext<'a> {
@@ -288,6 +334,7 @@ pub struct HudContext<'a> {
     pub aim_screen_pos: Option<(i32, i32)>,
     pub sim_time: f32,
     pub planet_markers: &'a [PlanetMarker<'a>],
+    pub inspection_data: Option<CelestialInspectionData<'a>>,
 }
 
 // ============================================================================
@@ -1062,11 +1109,428 @@ pub fn draw_planet_markers(framebuffer: &mut Framebuffer, markers: &[PlanetMarke
 }
 
 // ============================================================================
-// 5. Función Principal Modular de Entrada: render_hud
+// 5. HUD de Inspección Panorámica y Componente de Bitácora / Historia
+// ============================================================================
+
+/// Divide un texto largo en líneas que no excedan el ancho máximo en píxeles.
+pub fn wrap_text_to_lines(text: &str, max_width_px: i32, scale: i32) -> Vec<String> {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    for word in text.split_whitespace() {
+        let candidate = if current_line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{} {}", current_line, word)
+        };
+
+        if measure_text_width(&candidate, scale) <= max_width_px {
+            current_line = candidate;
+        } else {
+            if !current_line.is_empty() {
+                lines.push(current_line);
+            }
+            current_line = word.to_string();
+        }
+    }
+
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    lines
+}
+
+/// Divide las páginas de lore en páginas de líneas que quepan en la caja de diálogo sin desbordarse.
+pub fn paginate_lore(
+    pages: &[String],
+    max_width_px: i32,
+    max_lines_per_page: usize,
+    scale: i32,
+) -> Vec<Vec<String>> {
+    let mut result = Vec::new();
+    for raw_page in pages {
+        let lines = wrap_text_to_lines(raw_page, max_width_px, scale);
+        if lines.is_empty() {
+            continue;
+        }
+        for chunk in lines.chunks(max_lines_per_page) {
+            result.push(chunk.to_vec());
+        }
+    }
+    result
+}
+
+/// Traza el contorno rectangular de 1 píxel sobre el Framebuffer.
+#[inline]
+pub fn draw_rect_outline(fb: &mut Framebuffer, x: i32, y: i32, w: i32, h: i32, color: Color) {
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    fb.fill_rect(x, y, w, 1, color);
+    fb.fill_rect(x, y + h - 1, w, 1, color);
+    fb.fill_rect(x, y, 1, h, color);
+    fb.fill_rect(x + w - 1, y, 1, h, color);
+}
+
+/// Dibuja el panel lateral derecho con las características astronómicas del cuerpo celeste.
+pub fn draw_general_data_panel(
+    framebuffer: &mut Framebuffer,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    data: &CelestialInspectionData<'_>,
+) {
+    // 1. Fondo oscuro translúcido
+    framebuffer.fill_rect(x, y, width, height, Color::rgb(8, 12, 22));
+
+    // 2. Borde tecnológico (doble marco azul/cian)
+    draw_rect_outline(framebuffer, x, y, width, height, Color::rgb(45, 85, 160));
+    draw_rect_outline(
+        framebuffer,
+        x + 2,
+        y + 2,
+        width - 4,
+        height - 4,
+        Color::rgb(18, 32, 60),
+    );
+
+    // 3. Encabezado de la tarjeta "DATOS GENERALES"
+    let header_h = 24;
+    framebuffer.fill_rect(x, y, width, header_h, Color::rgb(22, 45, 95));
+    draw_rect_outline(framebuffer, x, y, width, header_h, Color::rgb(65, 125, 230));
+    draw_text(
+        framebuffer,
+        x + 14,
+        y + 8,
+        "DATOS GENERALES",
+        Color::rgb(170, 225, 255),
+        1,
+    );
+
+    // 4. Filas telemétricas
+    let mut cur_y = y + header_h + 14;
+    let row_spacing = 20;
+    let label_x = x + 14;
+    let value_x = x + 125;
+
+    let mut draw_row = |fb: &mut Framebuffer, label: &str, val: &str| {
+        draw_text(fb, label_x, cur_y, label, Color::rgb(125, 155, 195), 1);
+        draw_text(fb, value_x, cur_y, val, Color::rgb(235, 245, 255), 1);
+        cur_y += row_spacing;
+    };
+
+    draw_row(framebuffer, "ID / NOMBRE:", data.id);
+    draw_row(framebuffer, "TIPO:", data.body_type);
+
+    let radius_str = format!("{:.1} WU", data.radius_wu);
+    draw_row(framebuffer, "RADIO:", &radius_str);
+
+    let orbit_str = match data.orbital_period_s {
+        Some(p) => format!("{:.1} S", p),
+        None => "N/A (CENTRO)".to_string(),
+    };
+    draw_row(framebuffer, "PERIODO ORB:", &orbit_str);
+
+    let rot_str = format!("{:.1} S", data.rotation_period_s);
+    draw_row(framebuffer, "ROTACION:", &rot_str);
+
+    let grav_str = if data.gravity_strength > 0.0 {
+        format!(
+            "{:.1} G (R: {:.1})",
+            data.gravity_strength, data.gravity_radius
+        )
+    } else {
+        "DESACTIVADA".to_string()
+    };
+    draw_row(framebuffer, "GRAVEDAD:", &grav_str);
+
+    if let Some(ref obj_str) = data.surface_objects_summary {
+        draw_row(framebuffer, "SUPERFICIE:", obj_str);
+    }
+
+    if let Some(ref moons_str) = data.moons_summary {
+        draw_row(framebuffer, "SATELITES:", moons_str);
+    }
+
+    if let Some(ref rings_str) = data.rings_summary {
+        draw_row(framebuffer, "ANILLOS:", rings_str);
+    }
+
+    draw_row(framebuffer, "SHADER CPU:", data.shader_name);
+}
+
+/// Propiedades de configuración y contenido para el componente de cuadro de diálogo StoryBox.
+#[derive(Debug, Clone)]
+pub struct StoryBoxProps<'a> {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub tab_title: &'a str,
+    pub lines: &'a [String],
+    pub current_page_idx: usize,
+    pub total_pages: usize,
+    pub is_open: bool,
+}
+
+/// Componente modular y reutilizable de cuadro de diálogo / historia (StoryBox).
+///
+/// Recibe posición, dimensiones, título de pestaña, líneas formateadas de la página actual,
+/// índice de página, total de páginas y si está abierto o cerrado mediante `StoryBoxProps`.
+pub fn draw_story_dialog_box(framebuffer: &mut Framebuffer, props: &StoryBoxProps<'_>) {
+    let x = props.x;
+    let y = props.y;
+    let width = props.width;
+    let height = props.height;
+    let tab_title = props.tab_title;
+    let lines = props.lines;
+    let current_page_idx = props.current_page_idx;
+    let total_pages = props.total_pages;
+    let is_open = props.is_open;
+
+    if !is_open {
+        // Barra discreta de reapertura y navegación en la parte inferior cuando está cerrado
+        let bar_width = 460.min(width);
+        let bar_x = x + (width - bar_width) / 2;
+        let bar_y = y + height - 28;
+        let bar_height = 24;
+
+        framebuffer.fill_rect(bar_x, bar_y, bar_width, bar_height, Color::rgb(12, 18, 30));
+        draw_rect_outline(
+            framebuffer,
+            bar_x,
+            bar_y,
+            bar_width,
+            bar_height,
+            Color::rgb(45, 80, 140),
+        );
+
+        let prompt = "[C] SALIR DE VISTA | [ENTER] REABRIR REGISTRO";
+        let prompt_w = measure_text_width(prompt, 1);
+        let tx = bar_x + (bar_width - prompt_w) / 2;
+        let ty = bar_y + (bar_height - 7) / 2;
+        draw_text(framebuffer, tx, ty, prompt, Color::rgb(140, 195, 245), 1);
+        return;
+    }
+
+    // 1. Fondo oscuro translúcido
+    framebuffer.fill_rect(x, y, width, height, Color::rgb(8, 12, 22));
+
+    // 2. Borde exterior tecnológico doble
+    draw_rect_outline(framebuffer, x, y, width, height, Color::rgb(45, 85, 160));
+    draw_rect_outline(
+        framebuffer,
+        x + 2,
+        y + 2,
+        width - 4,
+        height - 4,
+        Color::rgb(18, 32, 60),
+    );
+
+    // 3. Pestaña superior izquierda (Header Tab)
+    let tab_w = 270.min(width - 20);
+    let tab_h = 22;
+    framebuffer.fill_rect(x, y, tab_w, tab_h, Color::rgb(22, 45, 95));
+    draw_rect_outline(framebuffer, x, y, tab_w, tab_h, Color::rgb(65, 125, 230));
+    draw_text(
+        framebuffer,
+        x + 12,
+        y + 7,
+        tab_title,
+        Color::rgb(160, 220, 255),
+        1,
+    );
+
+    // Indicador de página en la esquina derecha del tab
+    let page_indicator = format!(
+        "{}/{}",
+        (current_page_idx + 1).min(total_pages),
+        total_pages
+    );
+    let p_w = measure_text_width(&page_indicator, 1);
+    draw_text(
+        framebuffer,
+        x + tab_w - p_w - 10,
+        y + 7,
+        &page_indicator,
+        Color::rgb(255, 220, 100),
+        1,
+    );
+
+    // 4. Texto de la bitácora / historia
+    let text_start_x = x + 20;
+    let mut text_y = y + tab_h + 12;
+    let line_height = 15;
+
+    for line in lines {
+        draw_text(
+            framebuffer,
+            text_start_x,
+            text_y,
+            line,
+            Color::rgb(225, 240, 255),
+            1,
+        );
+        text_y += line_height;
+    }
+
+    // 5. Botón / Instrucción en la esquina inferior derecha
+    let is_last_page = current_page_idx + 1 >= total_pages;
+    let (action_label, action_color) = if is_last_page {
+        ("[ENTER] CERRAR REGISTRO [X]", Color::rgb(255, 190, 70))
+    } else {
+        ("[ENTER] SIGUIENTE PAGINA [>]", Color::rgb(70, 230, 180))
+    };
+
+    let action_w = measure_text_width(action_label, 1);
+    let action_x = x + width - action_w - 20;
+    let action_y = y + height - 20;
+
+    // Pequeño marco de realce para el botón de acción
+    framebuffer.fill_rect(
+        action_x - 6,
+        action_y - 3,
+        action_w + 12,
+        14,
+        Color::rgb(18, 30, 55),
+    );
+    draw_rect_outline(
+        framebuffer,
+        action_x - 6,
+        action_y - 3,
+        action_w + 12,
+        14,
+        action_color,
+    );
+    draw_text(
+        framebuffer,
+        action_x,
+        action_y,
+        action_label,
+        action_color,
+        1,
+    );
+
+    // Instrucción para salir con [C] en la esquina inferior izquierda
+    draw_text(
+        framebuffer,
+        text_start_x,
+        action_y,
+        "[C] SALIR DE VISTA PANORAMICA",
+        Color::rgb(120, 145, 175),
+        1,
+    );
+}
+
+/// Dibuja el HUD panorámico completo al entrar en la vista orbital de un astro.
+pub fn draw_planet_inspection_hud(
+    framebuffer: &mut Framebuffer,
+    data: &CelestialInspectionData<'_>,
+) {
+    let width = framebuffer.width as i32;
+    let height = framebuffer.height as i32;
+
+    // 1. Título superior central con escala 2 y color dorado
+    let title_w = measure_text_width(data.title, 2);
+    let title_x = (width - title_w) / 2;
+    let title_y = 26;
+
+    // Decoración de acento alrededor del título
+    let bracket_pad = 16;
+    draw_text(
+        framebuffer,
+        title_x - bracket_pad - 12,
+        title_y,
+        "[",
+        Color::rgb(100, 180, 255),
+        2,
+    );
+    draw_text(
+        framebuffer,
+        title_x + title_w + bracket_pad,
+        title_y,
+        "]",
+        Color::rgb(100, 180, 255),
+        2,
+    );
+    draw_text(
+        framebuffer,
+        title_x,
+        title_y,
+        data.title,
+        Color::rgb(255, 225, 75),
+        2,
+    );
+
+    // Subtítulo pequeño debajo del título
+    let sub_text = "SECTOR ORBITAL // REGISTRO TELEMETRICO";
+    let sub_w = measure_text_width(sub_text, 1);
+    draw_text(
+        framebuffer,
+        (width - sub_w) / 2,
+        title_y + 20,
+        sub_text,
+        Color::rgb(120, 160, 200),
+        1,
+    );
+
+    // 2. Panel derecho de "DATOS GENERALES"
+    let panel_w = 340;
+    let panel_h = 240;
+    let panel_x = width - panel_w - 28;
+    let panel_y = 65;
+    draw_general_data_panel(framebuffer, panel_x, panel_y, panel_w, panel_h, data);
+
+    // 3. Cuadro inferior de historia / bitácora (StoryBox)
+    let story_w = 980.min(width - 56);
+    let story_h = 135;
+    let story_x = (width - story_w) / 2;
+    let story_y = height - story_h - 24;
+
+    // Paginación y envoltura de texto
+    let max_text_width = story_w - 40;
+    let paginated = paginate_lore(data.lore_pages, max_text_width, 4, 1);
+    let total_pages = paginated.len().max(1);
+    let current_idx = data.current_page.min(total_pages - 1);
+    let current_lines = if !paginated.is_empty() {
+        paginated[current_idx].clone()
+    } else {
+        vec!["Sin registros de bitacora disponibles para este sector.".to_string()]
+    };
+
+    let story_props = StoryBoxProps {
+        x: story_x,
+        y: story_y,
+        width: story_w,
+        height: story_h,
+        tab_title: "HISTORIA / REGISTRO DE BITACORA",
+        lines: &current_lines,
+        current_page_idx: current_idx,
+        total_pages,
+        is_open: data.is_story_open,
+    };
+
+    draw_story_dialog_box(framebuffer, &story_props);
+}
+
+// ============================================================================
+// 6. Función Principal Modular de Entrada: render_hud
 // ============================================================================
 
 /// Renderiza el HUD de juego completo desacoplado sobre el framebuffer.
 pub fn render_hud(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) {
+    // Si la nave está en modo panorámico orbital de inspección, renderiza la vista cinematográfica
+    if let Some(ref insp) = ctx.inspection_data {
+        draw_planet_inspection_hud(framebuffer, insp);
+        return;
+    }
+
     // 1. Visor de primera persona si está activo el modo cabina
     if ctx.first_person {
         draw_cockpit_visor(framebuffer);

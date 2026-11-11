@@ -1,8 +1,9 @@
 use space_travel::buffer::{Color, Framebuffer};
 use space_travel::combat::EncounterState;
 use space_travel::hud::{
-    HudContext, draw_aim_reticle, draw_health_bar, draw_speed_streaks, draw_text,
-    measure_text_width, project_world_to_screen, render_hud,
+    CelestialInspectionData, HudContext, StoryBoxProps, draw_aim_reticle, draw_health_bar,
+    draw_speed_streaks, draw_story_dialog_box, draw_text, measure_text_width, paginate_lore,
+    project_world_to_screen, render_hud, wrap_text_to_lines,
 };
 use space_travel::math::{Mat4, Vec3};
 use space_travel::pipeline::ShaderMode;
@@ -125,6 +126,7 @@ fn render_hud_executes_without_panic_in_both_observation_and_combat() {
         aim_screen_pos: Some((640, 360)),
         sim_time: 5.0,
         planet_markers: &[],
+        inspection_data: None,
     };
 
     render_hud(&mut fb, &ctx_obs);
@@ -175,6 +177,7 @@ fn render_hud_toggles_panels_independently() {
         aim_screen_pos: None,
         sim_time: 1.0,
         planet_markers: &[],
+        inspection_data: None,
     };
 
     render_hud(&mut fb_controls_only, &base_ctx);
@@ -223,4 +226,165 @@ fn planet_markers_render_proportionally_and_hierarchically() {
 
     // Debe haber píxeles dibujados para la flecha y el texto
     assert!(fb.as_bytes().iter().any(|&b| b > 0));
+}
+
+#[test]
+fn wrap_text_to_lines_respects_max_width_and_preserves_words() {
+    let text = "Planeta templado de clase terrestre con densos bosques y asentamientos urbanos.";
+    let lines = wrap_text_to_lines(text, 200, 1);
+    assert!(lines.len() >= 2);
+    for line in &lines {
+        assert!(measure_text_width(line, 1) <= 200);
+    }
+    // Todas las palabras deben conservarse
+    let joined = lines.join(" ");
+    for word in text.split_whitespace() {
+        assert!(joined.contains(word));
+    }
+}
+
+#[test]
+fn paginate_lore_splits_into_pages_safely() {
+    let pages = vec![
+        "Linea uno de prueba. Linea dos de prueba. Linea tres de prueba. Linea cuatro de prueba. Linea cinco de prueba. Linea seis de prueba.".to_string(),
+        "Segunda pagina breve.".to_string(),
+    ];
+    let paginated = paginate_lore(&pages, 150, 3, 1);
+    // La primera página larga debe dividirse en 2 subpáginas de máx 3 líneas, más la segunda página breve
+    assert!(paginated.len() >= 2);
+    for page in &paginated {
+        assert!(page.len() <= 3);
+    }
+}
+
+#[test]
+fn story_dialog_box_renders_deterministically_open_and_closed() {
+    let lines = vec![
+        "Registro de exploracion inicial.".to_string(),
+        "Sensores detectan atmosfera respirable.".to_string(),
+    ];
+
+    let mut fb_open_1 = Framebuffer::new(800, 600);
+    let mut fb_open_2 = Framebuffer::new(800, 600);
+    fb_open_1.clear(Color::BLACK);
+    fb_open_2.clear(Color::BLACK);
+
+    let open_props = StoryBoxProps {
+        x: 50,
+        y: 450,
+        width: 700,
+        height: 120,
+        tab_title: "HISTORIA / TEST",
+        lines: &lines,
+        current_page_idx: 0,
+        total_pages: 2,
+        is_open: true,
+    };
+
+    draw_story_dialog_box(&mut fb_open_1, &open_props);
+    draw_story_dialog_box(&mut fb_open_2, &open_props);
+    assert_eq!(fb_open_1.as_bytes(), fb_open_2.as_bytes());
+
+    let mut fb_closed = Framebuffer::new(800, 600);
+    fb_closed.clear(Color::BLACK);
+    let closed_props = StoryBoxProps {
+        is_open: false,
+        ..open_props
+    };
+    draw_story_dialog_box(&mut fb_closed, &closed_props);
+    // El modo cerrado debe ser diferente al abierto
+    assert_ne!(fb_open_1.as_bytes(), fb_closed.as_bytes());
+}
+
+#[test]
+fn lore_config_loads_all_bodies_from_file() {
+    use space_travel::LoreConfig;
+    use std::path::Path;
+
+    let lore = LoreConfig::load_from_file(Path::new("config/lore.toml"))
+        .expect("Debe cargar config/lore.toml correctamente");
+
+    let expected_keys = [
+        "sol",
+        "tierra",
+        "dona",
+        "kirby",
+        "destruido",
+        "rocoso",
+        "asteroide",
+        "homero",
+    ];
+    for key in expected_keys {
+        let entry = lore
+            .get_entry(key)
+            .unwrap_or_else(|| panic!("Debe existir lore para {}", key));
+        assert!(!entry.nombre.is_empty());
+        assert!(!entry.paginas.is_empty());
+    }
+
+    // Probar cuerpo inexistente
+    assert!(lore.get_entry("cuerpo_inexistente").is_none());
+}
+
+#[test]
+fn panoramic_inspection_hud_replaces_combat_hud_when_active() {
+    let pages = vec!["Planeta templado de prueba.".to_string()];
+    let insp_data = CelestialInspectionData {
+        id: "tierra",
+        title: "Planeta Tierra",
+        body_type: "Planeta Habitable",
+        radius_wu: 16.0,
+        orbital_period_s: Some(95.0),
+        rotation_period_s: 24.0,
+        gravity_strength: 12.0,
+        gravity_radius: 28.0,
+        surface_objects_summary: Some("48 Estructuras".to_string()),
+        moons_summary: None,
+        rings_summary: None,
+        shader_name: "EARTH_LIKE",
+        lore_pages: &pages,
+        current_page: 0,
+        is_story_open: true,
+    };
+
+    let mut fb_normal = Framebuffer::new(1280, 720);
+    let mut fb_panoramic = Framebuffer::new(1280, 720);
+    fb_normal.clear(Color::BLACK);
+    fb_panoramic.clear(Color::BLACK);
+
+    let base_ctx = HudContext {
+        player_health: 100.0,
+        player_max_health: 100.0,
+        player_alive: true,
+        ship_speed_wu: 25.0,
+        ship_max_speed_wu: 75.0,
+        combat_state: EncounterState::Dormant,
+        nearest_body_name: Some("tierra"),
+        nearest_body_distance_wu: 20.0,
+        is_near_orbit: true,
+        local_flight_mode: false,
+        gravity_enabled: true,
+        shader_mode: ShaderMode::Normal,
+        show_controls: true,
+        show_stats: false,
+        current_fps: 60.0,
+        frame_time_ms: 16.6,
+        frame_stats: FrameStats::default(),
+        first_person: false,
+        aim_screen_pos: Some((640, 360)),
+        sim_time: 2.0,
+        planet_markers: &[],
+        inspection_data: None,
+    };
+
+    render_hud(&mut fb_normal, &base_ctx);
+
+    let panoramic_ctx = HudContext {
+        local_flight_mode: true,
+        inspection_data: Some(insp_data),
+        ..base_ctx
+    };
+    render_hud(&mut fb_panoramic, &panoramic_ctx);
+
+    assert_ne!(fb_normal.as_bytes(), fb_panoramic.as_bytes());
 }

@@ -1,10 +1,10 @@
 use crate::buffer::{DepthBuffer, Framebuffer};
 use crate::camera::Camera;
 use crate::combat::{CombatSystem, Enemy, ProjectileOwner, create_projectile_mesh};
-use crate::config::{AppConfig, ThrusterFlameConfig};
+use crate::config::{AppConfig, LoreConfig, ThrusterFlameConfig};
 use crate::hud::{
-    HudContext, PlanetMarker, draw_health_bar, draw_orbital_lock_reticle, draw_speed_streaks,
-    project_world_to_screen, render_hud,
+    CelestialInspectionData, HudContext, PlanetMarker, draw_health_bar, draw_orbital_lock_reticle,
+    draw_speed_streaks, project_world_to_screen, render_hud,
 };
 use crate::material::Material;
 use crate::math::{Mat4, Vec3, deg_to_rad};
@@ -33,10 +33,18 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Identificador de astro objetivo para interacción y vista panorámica.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InspectedCelestial {
+    Sun,
+    Planet(usize),
+}
+
 /// Aplicación principal que orquesta el ciclo de simulación espacial, control de nave,
 /// cámara de persecución y renderizado por software en CPU.
 pub struct App {
     config: AppConfig,
+    pub lore_config: LoreConfig,
     renderer: SoftwareRenderer,
     framebuffer: Framebuffer,
     depth_buffer: DepthBuffer,
@@ -66,6 +74,9 @@ pub struct App {
     pub gravity_enabled: bool,
     pub local_flight_mode: bool,
     pub nearby_planet_idx: Option<usize>,
+    pub nearby_celestial: Option<InspectedCelestial>,
+    pub story_box_open: bool,
+    pub story_box_page: usize,
     ship_thrust_state: f32,
     pub impact_shake_timer: f32,
     pub impact_shake_intensity: f32,
@@ -95,6 +106,19 @@ pub struct App {
     pub first_person: bool,
 }
 
+/// Contexto de parámetros para la construcción de datos de inspección telescópica / orbital.
+pub struct InspectionContext<'a> {
+    pub nearby: Option<InspectedCelestial>,
+    pub planets: &'a [CelestialBody],
+    pub planet_configs: &'a [crate::config::PlanetConfig],
+    pub sun_body: &'a CelestialBody,
+    pub sun_config: &'a crate::config::SunConfig,
+    pub dyson_sphere: Option<&'a DysonSphere>,
+    pub lore_config: &'a LoreConfig,
+    pub story_box_page: usize,
+    pub story_box_open: bool,
+}
+
 impl App {
     pub const WINDOW_WIDTH: usize = 1280;
     pub const WINDOW_HEIGHT: usize = 720;
@@ -102,6 +126,22 @@ impl App {
     pub fn new(config_path: &Path) -> Result<Self, String> {
         println!("[APP] Cargando configuración desde '{:?}'...", config_path);
         let config = AppConfig::load_from_file(config_path)?;
+
+        let lore_config = match LoreConfig::load_from_file(Path::new("config/lore.toml")) {
+            Ok(l) => {
+                println!(
+                    "[LORE] Archivo de bitácora y lore 'config/lore.toml' cargado exitosamente."
+                );
+                l
+            }
+            Err(e) => {
+                println!(
+                    "[LORE] Advertencia: No se pudo cargar 'config/lore.toml': {}. Se usarán valores predeterminados.",
+                    e
+                );
+                LoreConfig::default()
+            }
+        };
 
         // 1. Carga de mallas compartidas
         println!(
@@ -472,6 +512,7 @@ impl App {
 
         Ok(Self {
             config,
+            lore_config,
             renderer: SoftwareRenderer::new(),
             framebuffer: Framebuffer::new(Self::WINDOW_WIDTH, Self::WINDOW_HEIGHT),
             depth_buffer: DepthBuffer::new(Self::WINDOW_WIDTH, Self::WINDOW_HEIGHT),
@@ -496,6 +537,9 @@ impl App {
             gravity_enabled: true,
             local_flight_mode: false,
             nearby_planet_idx: None,
+            nearby_celestial: None,
+            story_box_open: true,
+            story_box_page: 0,
             ship_thrust_state: 0.0,
             impact_shake_timer: 0.0,
             impact_shake_intensity: 0.0,
@@ -623,16 +667,41 @@ impl App {
                 self.camera.eye = cockpit_pos;
                 self.camera.target = look_target;
                 self.camera.up = self.ship_state.up();
-            } else if self.local_flight_mode
-                && let Some(idx) = self.nearby_planet_idx
-                && let Some(planet) = self.planets.get(idx)
-            {
-                self.camera.update_panoramic_planet_view(
-                    planet.position,
-                    planet.radius,
-                    &self.config.camera,
-                    dt,
-                );
+            } else if self.local_flight_mode {
+                match self.nearby_celestial {
+                    Some(InspectedCelestial::Planet(idx)) => {
+                        if let Some(planet) = self.planets.get(idx) {
+                            self.camera.update_panoramic_planet_view(
+                                planet.position,
+                                planet.radius,
+                                &self.config.camera,
+                                dt,
+                            );
+                        }
+                    }
+                    Some(InspectedCelestial::Sun) => {
+                        let sun_radius = if let Some(ref d) = self.dyson_sphere {
+                            d.radius
+                        } else {
+                            self.sun_body.radius
+                        };
+                        self.camera.update_panoramic_planet_view(
+                            self.sun_body.position,
+                            sun_radius,
+                            &self.config.camera,
+                            dt,
+                        );
+                    }
+                    None => {
+                        self.camera.update_chase(
+                            self.ship_state.position,
+                            self.ship_state.forward(),
+                            self.ship_state.up(),
+                            &self.config.camera,
+                            dt,
+                        );
+                    }
+                }
             } else {
                 self.camera.update_chase(
                     self.ship_state.position,
@@ -714,13 +783,21 @@ impl App {
         }
 
         if rl.is_key_pressed(KeyboardKey::KEY_C) {
-            if self.nearby_planet_idx.is_some() {
+            if self.nearby_celestial.is_some() {
                 self.local_flight_mode = !self.local_flight_mode;
-                let target_name = self
-                    .nearby_planet_idx
-                    .and_then(|idx| self.planets.get(idx))
-                    .map(|p| p.id.as_str())
-                    .unwrap_or("planeta");
+                if self.local_flight_mode {
+                    self.story_box_open = true;
+                    self.story_box_page = 0;
+                }
+                let target_name = match self.nearby_celestial {
+                    Some(InspectedCelestial::Planet(idx)) => self
+                        .planets
+                        .get(idx)
+                        .map(|p| p.id.as_str())
+                        .unwrap_or("planeta"),
+                    Some(InspectedCelestial::Sun) => "Sol",
+                    None => "cuerpo",
+                };
                 println!(
                     "[NAVEGACIÓN] Modo de control local orbital: {} (fijado a {})",
                     if self.local_flight_mode {
@@ -732,8 +809,24 @@ impl App {
                 );
             } else {
                 println!(
-                    "[NAVEGACIÓN] No hay planetas en rango de aproximación para modo de control local."
+                    "[NAVEGACIÓN] No hay cuerpos celestes en rango de aproximación para modo de control local."
                 );
+            }
+        }
+
+        if rl.is_key_pressed(KeyboardKey::KEY_ENTER) && self.local_flight_mode {
+            let total_pages = self.get_current_lore_total_pages();
+            if self.story_box_open {
+                if self.story_box_page + 1 < total_pages {
+                    self.story_box_page += 1;
+                } else {
+                    // Última página alcanzada: cerrar el registro de bitácora
+                    self.story_box_open = false;
+                }
+            } else {
+                // Reabrir registro desde el inicio
+                self.story_box_open = true;
+                self.story_box_page = 0;
             }
         }
 
@@ -852,27 +945,46 @@ impl App {
             }
         }
 
-        // Detección del planeta más próximo para aproximación y modo local orbital
-        let mut nearest_candidate: Option<(usize, f32)> = None;
+        // Detección del cuerpo celeste más próximo para aproximación y modo local orbital
+        let mut nearest_candidate: Option<(InspectedCelestial, f32)> = None;
+
+        // Verificación del Sol / Esfera de Dyson
+        let sun_dist = (self.ship_state.position - self.sun_body.position).length();
+        let sun_radius = if let Some(ref d) = self.dyson_sphere {
+            d.radius
+        } else {
+            self.sun_body.radius
+        };
+        let sun_engagement = (sun_radius * 2.8).max(90.0);
+        if sun_dist <= sun_engagement {
+            nearest_candidate = Some((InspectedCelestial::Sun, sun_dist));
+        }
+
+        // Verificación de planetas
         for (idx, planet) in self.planets.iter().enumerate() {
             let dist = (self.ship_state.position - planet.position).length();
             let engagement_range = planet.gravity_radius.max(planet.radius * 2.8);
             if dist <= engagement_range {
                 match nearest_candidate {
                     Some((_, current_min)) if dist < current_min => {
-                        nearest_candidate = Some((idx, dist));
+                        nearest_candidate = Some((InspectedCelestial::Planet(idx), dist));
                     }
                     None => {
-                        nearest_candidate = Some((idx, dist));
+                        nearest_candidate = Some((InspectedCelestial::Planet(idx), dist));
                     }
                     _ => {}
                 }
             }
         }
-        self.nearby_planet_idx = nearest_candidate.map(|(idx, _)| idx);
+
+        self.nearby_celestial = nearest_candidate.map(|(c, _)| c);
+        self.nearby_planet_idx = match self.nearby_celestial {
+            Some(InspectedCelestial::Planet(idx)) => Some(idx),
+            _ => None,
+        };
 
         // Desacople automático si la nave se aleja fuera del radio orbital
-        if self.local_flight_mode && self.nearby_planet_idx.is_none() {
+        if self.local_flight_mode && self.nearby_celestial.is_none() {
             self.local_flight_mode = false;
             println!(
                 "[NAVEGACIÓN] Nave fuera del rango orbital. Retornando a vista de persecución."
@@ -1720,7 +1832,7 @@ impl App {
         };
 
         // Marcador visual de aproximación orbital sobre el centro del planeta visible
-        if let Some(idx) = self.nearby_planet_idx
+        if let Some(InspectedCelestial::Planet(idx)) = self.nearby_celestial
             && let Some(planet) = self.planets.get(idx)
             && !self.local_flight_mode
             && let Some((px, py)) = project_world_to_screen(
@@ -1734,7 +1846,49 @@ impl App {
         }
 
         // Proyección analítica de indicadores planetarios dinámicos
-        let mut planet_markers = Vec::with_capacity(self.planets.len());
+        let mut planet_markers = Vec::with_capacity(self.planets.len() + 1);
+
+        // Indicador del Sol
+        let sun_dist = (self.ship_state.position - self.sun_body.position).length();
+        let sun_radius = if let Some(ref d) = self.dyson_sphere {
+            d.radius
+        } else {
+            self.sun_body.radius
+        };
+        let sun_dist_surface = (sun_dist - sun_radius).max(0.0);
+        let sun_center_proj = project_world_to_screen(
+            &vp_matrix,
+            self.sun_body.position,
+            self.framebuffer.width,
+            self.framebuffer.height,
+        );
+        let sun_top_world = self.sun_body.position + active_camera.up * (sun_radius * 1.06);
+        let sun_top_proj = project_world_to_screen(
+            &vp_matrix,
+            sun_top_world,
+            self.framebuffer.width,
+            self.framebuffer.height,
+        );
+        if let (Some((cx, cy)), Some((tx, ty))) = (sun_center_proj, sun_top_proj) {
+            let dx = cx - tx;
+            let dy = cy - ty;
+            let proj_radius = (dx * dx + dy * dy).isqrt().max(4);
+            let is_near = sun_dist_surface <= sun_radius * 6.5;
+            let in_interaction = self.nearby_celestial == Some(InspectedCelestial::Sun);
+            let is_panoramic = self.local_flight_mode && in_interaction;
+
+            planet_markers.push(PlanetMarker {
+                id: "sol",
+                screen_x: tx,
+                screen_y: ty,
+                projected_radius: proj_radius,
+                distance_wu: sun_dist_surface,
+                is_near,
+                in_interaction_range: in_interaction,
+                is_panoramic_active: is_panoramic,
+            });
+        }
+
         for (idx, planet) in self.planets.iter().enumerate() {
             let dist = (self.ship_state.position - planet.position).length();
             let dist_surface = (dist - planet.radius).max(0.0);
@@ -1762,7 +1916,7 @@ impl App {
                 let proj_radius = (dx * dx + dy * dy).isqrt().max(4);
 
                 let is_near = dist_surface <= planet.radius * 6.5;
-                let in_interaction = self.nearby_planet_idx == Some(idx);
+                let in_interaction = self.nearby_celestial == Some(InspectedCelestial::Planet(idx));
                 let is_panoramic = self.local_flight_mode && in_interaction;
 
                 planet_markers.push(PlanetMarker {
@@ -1785,6 +1939,23 @@ impl App {
             &self.planets,
         );
 
+        let inspection_data = if self.local_flight_mode {
+            let insp_ctx = InspectionContext {
+                nearby: self.nearby_celestial,
+                planets: &self.planets,
+                planet_configs: &self.config.planets,
+                sun_body: &self.sun_body,
+                sun_config: &self.config.sun,
+                dyson_sphere: self.dyson_sphere.as_ref(),
+                lore_config: &self.lore_config,
+                story_box_page: self.story_box_page,
+                story_box_open: self.story_box_open,
+            };
+            Self::build_inspection_data(&insp_ctx)
+        } else {
+            None
+        };
+
         let hud_ctx = HudContext {
             player_health: self.combat.player_health,
             player_max_health: self.config.enemies.player_max_health,
@@ -1794,7 +1965,7 @@ impl App {
             combat_state: self.combat.state,
             nearest_body_name: Some(nearest_name),
             nearest_body_distance_wu: nearest_dist,
-            is_near_orbit: self.nearby_planet_idx.is_some(),
+            is_near_orbit: self.nearby_celestial.is_some(),
             local_flight_mode: self.local_flight_mode,
             gravity_enabled: self.gravity_enabled,
             shader_mode: self.shader_mode,
@@ -1807,6 +1978,7 @@ impl App {
             aim_screen_pos: aim_pos,
             sim_time: self.sim_time,
             planet_markers: &planet_markers,
+            inspection_data,
         };
 
         render_hud(&mut self.framebuffer, &hud_ctx);
@@ -1963,5 +2135,186 @@ impl App {
             &self.sun_body,
             &self.planets,
         )
+    }
+
+    /// Construye la información telemétrica y de lore para el HUD de inspección panorámica.
+    pub fn build_inspection_data<'a>(
+        ctx: &InspectionContext<'a>,
+    ) -> Option<CelestialInspectionData<'a>> {
+        match ctx.nearby {
+            Some(InspectedCelestial::Planet(idx)) => {
+                let planet = ctx.planets.get(idx)?;
+                let p_cfg = ctx.planet_configs.get(idx);
+                let lore_key = p_cfg
+                    .and_then(|p| p.lore_id.as_deref())
+                    .unwrap_or(planet.id.as_str());
+                let lore_entry = ctx.lore_config.get_entry(lore_key);
+
+                let title = lore_entry
+                    .map(|e| e.nombre.as_str())
+                    .unwrap_or(planet.id.as_str());
+
+                let pages = lore_entry.map(|e| e.paginas.as_slice()).unwrap_or(&[]);
+
+                let body_type = match planet.id.as_str() {
+                    "tierra" => "Planeta Habitable",
+                    "dona" => "Toroide Glaseado",
+                    "kirby" => "Planeta Biomecanico",
+                    "destruido" => "Planeta Fragmentado",
+                    "rocoso" => "Planeta Rocoso Arido",
+                    "asteroide" => "Asteroide Procedural",
+                    "homero" => "Satelite Orbital",
+                    _ => "Cuerpo Celeste",
+                };
+
+                let surface_summary = match planet.id.as_str() {
+                    "tierra" => Some("48 (Robles, Pinos, Ciudad)".to_string()),
+                    "dona" => Some("32 (Pasteles, Galletas, Helados)".to_string()),
+                    "kirby" => Some("5 Modulos, 1 Propulsor".to_string()),
+                    "destruido" => Some("Superficie fragmentada".to_string()),
+                    "rocoso" => Some("6 Cadenas montanosas".to_string()),
+                    "asteroide" => Some("Malla deformada procedural".to_string()),
+                    _ => None,
+                };
+
+                let moons_summary = match planet.id.as_str() {
+                    "dona" => Some("1 (Homero)".to_string()),
+                    "kirby" => Some("1 (Estrella)".to_string()),
+                    _ => None,
+                };
+
+                let rings_summary = if planet.id == "destruido" {
+                    Some("20 Escombros orbitales".to_string())
+                } else {
+                    None
+                };
+
+                Some(CelestialInspectionData {
+                    id: planet.id.as_str(),
+                    title,
+                    body_type,
+                    radius_wu: planet.radius,
+                    orbital_period_s: Some(planet.orbital_period),
+                    rotation_period_s: planet.rotation_period,
+                    gravity_strength: planet.gravity_strength,
+                    gravity_radius: planet.gravity_radius,
+                    surface_objects_summary: surface_summary,
+                    moons_summary,
+                    rings_summary,
+                    shader_name: planet.shader_type.as_str(),
+                    lore_pages: pages,
+                    current_page: ctx.story_box_page,
+                    is_story_open: ctx.story_box_open,
+                })
+            }
+            Some(InspectedCelestial::Sun) => {
+                let lore_key = ctx
+                    .sun_config
+                    .lore_id
+                    .as_deref()
+                    .unwrap_or(ctx.sun_body.id.as_str());
+                let lore_entry = ctx.lore_config.get_entry(lore_key);
+
+                let title = lore_entry
+                    .map(|e| e.nombre.as_str())
+                    .unwrap_or("Estrella Central (Sol)");
+
+                let pages = lore_entry.map(|e| e.paginas.as_slice()).unwrap_or(&[]);
+
+                let body_type = if ctx.dyson_sphere.is_some() {
+                    "Enana Amarilla + Dyson"
+                } else {
+                    "Enana Amarilla (Plasma)"
+                };
+
+                let radius = if let Some(d) = ctx.dyson_sphere {
+                    d.radius
+                } else {
+                    ctx.sun_body.radius
+                };
+
+                let surface_summary = if ctx.dyson_sphere.is_some() {
+                    Some("Megaestructura Dyson activa".to_string())
+                } else {
+                    Some("Corona solar de plasma".to_string())
+                };
+
+                let moons_summary = Some(format!("{} Planetas en orbita", ctx.planets.len()));
+
+                Some(CelestialInspectionData {
+                    id: "sol",
+                    title,
+                    body_type,
+                    radius_wu: radius,
+                    orbital_period_s: None,
+                    rotation_period_s: ctx.sun_body.rotation_period,
+                    gravity_strength: ctx.sun_body.gravity_strength,
+                    gravity_radius: ctx.sun_body.gravity_radius,
+                    surface_objects_summary: surface_summary,
+                    moons_summary,
+                    rings_summary: None,
+                    shader_name: "PLASMA SOLAR (CPU)",
+                    lore_pages: pages,
+                    current_page: ctx.story_box_page,
+                    is_story_open: ctx.story_box_open,
+                })
+            }
+            None => None,
+        }
+    }
+
+    /// Construye la información telemétrica y de lore para el HUD de inspección panorámica actual.
+    pub fn build_current_inspection_data(&self) -> Option<CelestialInspectionData<'_>> {
+        let ctx = InspectionContext {
+            nearby: self.nearby_celestial,
+            planets: &self.planets,
+            planet_configs: &self.config.planets,
+            sun_body: &self.sun_body,
+            sun_config: &self.config.sun,
+            dyson_sphere: self.dyson_sphere.as_ref(),
+            lore_config: &self.lore_config,
+            story_box_page: self.story_box_page,
+            story_box_open: self.story_box_open,
+        };
+        Self::build_inspection_data(&ctx)
+    }
+
+    /// Retorna el número total de páginas formateadas de lore para el astro actual.
+    pub fn get_current_lore_total_pages(&self) -> usize {
+        let lore_pages = match self.nearby_celestial {
+            Some(InspectedCelestial::Planet(idx)) => {
+                if let Some(planet) = self.planets.get(idx) {
+                    let lore_key = self
+                        .config
+                        .planets
+                        .get(idx)
+                        .and_then(|p| p.lore_id.as_deref())
+                        .unwrap_or(planet.id.as_str());
+                    self.lore_config
+                        .get_entry(lore_key)
+                        .map(|e| e.paginas.as_slice())
+                        .unwrap_or(&[])
+                } else {
+                    &[]
+                }
+            }
+            Some(InspectedCelestial::Sun) => {
+                let lore_key = self
+                    .config
+                    .sun
+                    .lore_id
+                    .as_deref()
+                    .unwrap_or(self.sun_body.id.as_str());
+                self.lore_config
+                    .get_entry(lore_key)
+                    .map(|e| e.paginas.as_slice())
+                    .unwrap_or(&[])
+            }
+            None => &[],
+        };
+
+        let max_text_width = 980.min(Self::WINDOW_WIDTH as i32 - 56) - 40;
+        let paginated = crate::hud::paginate_lore(lore_pages, max_text_width, 4, 1);
+        paginated.len().max(1)
     }
 }
