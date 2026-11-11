@@ -275,7 +275,7 @@ fn test_invalid_configuration_rejections() {
 fn test_diagnostic_keys_and_shader_modes() {
     let mut controls = DiagnosticControls::new();
     assert_eq!(controls.shader_mode, ShaderMode::Normal);
-    assert_eq!(controls.stats_mode, StatsDisplayMode::Compact);
+    assert_eq!(controls.stats_mode, StatsDisplayMode::Off);
 
     // La tecla 'D' no modifica el modo de shader ni de estadísticas
     controls.handle_key_action(false, false, true); // is_d = true
@@ -286,7 +286,7 @@ fn test_diagnostic_keys_and_shader_modes() {
     );
     assert_eq!(
         controls.stats_mode,
-        StatsDisplayMode::Compact,
+        StatsDisplayMode::Off,
         "La tecla 'D' no debe alterar el modo de estadísticas"
     );
 
@@ -303,12 +303,12 @@ fn test_diagnostic_keys_and_shader_modes() {
     controls.handle_key_action(true, false, false);
     assert_eq!(controls.shader_mode, ShaderMode::Normal);
 
-    // La tecla 'F3' continúa afectando únicamente las estadísticas
+    // La tecla 'F3' continúa afectando únicamente las estadísticas (Off -> Compact -> Detailed -> Off)
     controls.handle_key_action(false, true, false); // is_f3 = true
     assert_eq!(
         controls.stats_mode,
-        StatsDisplayMode::Detailed,
-        "F3 debe cambiar estadísticas a Detailed"
+        StatsDisplayMode::Compact,
+        "F3 debe cambiar estadísticas a Compact"
     );
     assert_eq!(
         controls.shader_mode,
@@ -317,22 +317,22 @@ fn test_diagnostic_keys_and_shader_modes() {
     );
 
     controls.handle_key_action(false, true, false);
-    assert_eq!(controls.stats_mode, StatsDisplayMode::Off);
+    assert_eq!(controls.stats_mode, StatsDisplayMode::Detailed);
     assert_eq!(controls.shader_mode, ShaderMode::Normal);
 
     controls.handle_key_action(false, true, false);
-    assert_eq!(controls.stats_mode, StatsDisplayMode::Compact);
+    assert_eq!(controls.stats_mode, StatsDisplayMode::Off);
     assert_eq!(controls.shader_mode, ShaderMode::Normal);
 
     // Validación directa sobre la entidad real App
     let mut app = App::new(Path::new("config/solar_system.toml")).unwrap();
     assert_eq!(app.shader_mode, ShaderMode::Normal);
-    assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Compact);
+    assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Off);
 
     // La tecla 'D' en App no altera modo de sombreado ni estadísticas
     app.handle_diagnostic_key(false, false, true);
     assert_eq!(app.shader_mode, ShaderMode::Normal);
-    assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Compact);
+    assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Off);
 
     // 'F2' cicla shader_mode en App
     app.handle_diagnostic_key(true, false, false);
@@ -344,11 +344,11 @@ fn test_diagnostic_keys_and_shader_modes() {
     app.handle_diagnostic_key(true, false, false);
     assert_eq!(app.shader_mode, ShaderMode::Normal);
 
-    // 'F3' cicla modo de estadísticas en App
+    // 'F3' cicla modo de estadísticas en App (Off -> Compact -> Detailed -> Off)
+    app.handle_diagnostic_key(false, true, false);
+    assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Compact);
     app.handle_diagnostic_key(false, true, false);
     assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Detailed);
     app.handle_diagnostic_key(false, true, false);
     assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Off);
-    app.handle_diagnostic_key(false, true, false);
-    assert_eq!(app.stats_tracker.display_mode, StatsDisplayMode::Compact);
 }

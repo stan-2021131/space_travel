@@ -1,0 +1,57 @@
+# ============================================================================
+# Registro de Bitácora y Lore de Cuerpos Celestes
+# Sistema Solar - Proyecto Final Gráficas por Computadora
+# ============================================================================
+
+[sol]
+nombre = "Estrella Central (Sol)"
+paginas = [
+    "El corazon termonuclear del sistema. Una enana amarilla de plasma incandescente cuya inmensa radiacion y atraccion gravitatoria gobierna las orbitas de todos los mundos circundantes.",
+    "Los registros indican la construccion de una megaestructura de Dyson a su alrededor para recolectar energia estelar masiva. Las naves que se aproximan en exceso sufren dano severo por radiacion termica."
+]
+
+[tierra]
+nombre = "Planeta Tierra"
+paginas = [
+    "Planeta templado de clase terrestre. Posee densos bosques de robles y pinos, asi como ciudades con fabricas y complejos residenciales distribuidos a lo largo de su corteza.",
+    "Su atmosfera equilibrada y campo gravitatorio constante lo convierten en el bastión biologico de la flota. Las lecturas orbitales muestran cero anomalias hostiles en superficie."
+]
+
+[rocoso]
+nombre = "Planeta Rocoso"
+paginas = [
+    "Un mundo arido y escarpado dominado por colosales cadenas montanosas y canones basalticos. La ausencia de vegetacion se compensa con una rica concentracion de minerales pesados."
+]
+
+[destruido]
+nombre = "Planeta Destruido"
+paginas = [
+    "Vestigios de un planeta que sufrio un cataclismo tectonico desconocido en eras pasadas. Su nucleo expuesto permanece rodeado por un denso cinturon de escombros y asteroides que giran en trayectoria eliptica."
+]
+
+[asteroide]
+nombre = "Asteroide Procedural"
+paginas = [
+    "Cuerpo menor irregular generado por la condensacion de polvo cosmico primigenio. Su superficie asimetrica presenta deformaciones orograficas unicas calculadas proceduralmente en tiempo real."
+]
+
+[kirby]
+nombre = "Planeta Pop"
+paginas = [
+    "Una singular masa planetaria de tono rosado dotada de un gigantesco propulsor de maniobra orbital en su polo inferior, ensamblado a partir de modulos y componentes independientes.",
+    "Orbitado de forma perpetua por la luna Estrella, este mundo genera un campo inusual. Sus caracteristicas morfologicas desafian la clasificacion astronomica estandar."
+]
+
+[dona]
+nombre = "Planeta Dona"
+paginas = [
+    "Un colosal cuerpo celeste de geometria toroidal dulce. Su superficie glaseada esta repleta de megaestructuras conicas de helado, rebanadas de pastel, galletas y paletas confitadas.",
+    "Representa el centro de atraccion mas dulce de todo el cuadrante. La gravedad toroidal curva el horizonte de forma singular, creando un campo visual extraordinario durante el vuelo orbital."
+]
+
+[homero]
+nombre = "Satelite Homero"
+paginas = [
+    "Satelite natural en orbita sincrona alrededor del Planeta Dona. Su trayectoria permanece inextricablemente vinculada a la atraccion gastronomica ejercida por el gigante glaseado."
+]
+

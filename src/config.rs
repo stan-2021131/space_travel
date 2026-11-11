@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -132,6 +132,8 @@ pub struct CameraConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SunConfig {
     pub id: String,
+    #[serde(default)]
+    pub lore_id: Option<String>,
     pub model_path: String,
     pub radius: f32,
     pub collision_margin: f32,
@@ -262,6 +264,8 @@ fn default_surface_fade_range() -> f32 {
 pub struct PlanetConfig {
     pub id: String,
     #[serde(default)]
+    pub lore_id: Option<String>,
+    #[serde(default)]
     pub parent_id: Option<String>,
     #[serde(default = "default_mesh_type")]
     pub mesh_type: String,
@@ -302,6 +306,45 @@ pub struct PlanetConfig {
 impl PlanetConfig {
     pub fn effective_gravity_radius(&self) -> f32 {
         self.gravity_radius.unwrap_or(self.radius + 4.0)
+    }
+}
+
+/// Entrada de lore o registro de bitácora para un cuerpo celeste.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+pub struct CelestialLoreEntry {
+    #[serde(default)]
+    pub nombre: String,
+    #[serde(default)]
+    pub paginas: Vec<String>,
+}
+
+/// Diccionario de registros de bitácora deserializados desde archivo TOML.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct LoreConfig {
+    #[serde(flatten)]
+    pub entries: HashMap<String, CelestialLoreEntry>,
+}
+
+impl LoreConfig {
+    /// Carga y deserializa el archivo TOML de lore de cuerpos celestes.
+    pub fn load_from_file(path: &Path) -> Result<Self, String> {
+        let content = fs::read_to_string(path)
+            .map_err(|e| format!("Error al leer archivo de lore '{}': {}", path.display(), e))?;
+
+        let lore: LoreConfig = toml::from_str(&content).map_err(|e| {
+            format!(
+                "Error de sintaxis en archivo de lore '{}': {}",
+                path.display(),
+                e
+            )
+        })?;
+
+        Ok(lore)
+    }
+
+    /// Obtiene la entrada de lore correspondiente a un identificador.
+    pub fn get_entry(&self, id: &str) -> Option<&CelestialLoreEntry> {
+        self.entries.get(id)
     }
 }
 
