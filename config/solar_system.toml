@@ -4,6 +4,49 @@ time_scale = 1.0
 fixed_timestep = 0.0166667
 max_frame_delta = 0.1
 
+[music]
+enabled = true
+general_path = "assets/audio/music/General.ogg"
+master_volume = 0.70
+crossfade_seconds = 2.5
+general_min_volume = 0.15
+
+  [[music.zones]]
+  body_id = "sol"
+  path = "assets/audio/music/Dyson_fixed.ogg"
+  inner_distance = 35.0
+  outer_distance = 70.0
+
+  [[music.zones]]
+  body_id = "tierra"
+  path = "assets/audio/music/Tierra_Planet.ogg"
+  inner_distance = 12.0
+  outer_distance = 55.0
+
+  [[music.zones]]
+  body_id = "rocoso"
+  path = "assets/audio/music/Rocky_Planet.ogg"
+  inner_distance = 12.0
+  outer_distance = 55.0
+
+  [[music.zones]]
+  body_id = "destruido"
+  path = "assets/audio/music/Destroyed_Planet_fixed.ogg"
+  inner_distance = 12.0
+  outer_distance = 55.0
+
+  [[music.zones]]
+  body_id = "kirby"
+  path = "assets/audio/music/Kirby_Planet.ogg"
+  inner_distance = 15.0
+  outer_distance = 60.0
+
+  [[music.zones]]
+  body_id = "dona"
+  path = "assets/audio/music/Donut_Planet.ogg"
+  inner_distance = 25.0
+  outer_distance = 85.0
+
 [ship]
 model_path = "assets/models/nave.obj"
 target_length_wu = 1.0
@@ -266,6 +309,16 @@ visible_gravity = false
   [[planets.components]]
   name = "Boca"
   model_path = "assets/models/kirby_planet/kirby_mouth/mouth.obj"
+
+  [[planets.components]]
+  name = "Montaña rusa colgante"
+  model_path = "assets/models/objects/roller_coaster/roller_coaster.obj"
+
+  [[planets.components]]
+  name = "Tren de montaña rusa"
+  model_path = "assets/models/objects/coaster_train/coaster_train.obj"
+  local_rotation_period = 14.0
+  initial_local_rotation_deg = 0.0
 
   [[planets.thruster_flames]]
   position = [0.0, -2.52, 0.0]

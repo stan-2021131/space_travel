@@ -1,0 +1,10 @@
+Coaster Kit (1.0)
+
+Created and distributed by Kenney (https://kenney.nl/).
+Creation date: 2024-11-13.
+
+License: Creative Commons Zero (CC0 1.0 Universal)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The asset may be used for personal, educational and commercial purposes.
+Attribution to Kenney is appreciated but not required.

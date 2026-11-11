@@ -21,6 +21,9 @@ pub struct CelestialComponent {
     pub mesh: Arc<Mesh>,
     /// Radio máximo desde el origen compartido del cuerpo compuesto.
     pub origin_radius: f32,
+    /// Periodo de rotación local alrededor de Z; cero representa un componente rígido.
+    pub local_rotation_period: f32,
+    pub initial_local_rotation_rad: f32,
 }
 
 impl CelestialComponent {
@@ -34,7 +37,37 @@ impl CelestialComponent {
             name,
             mesh,
             origin_radius,
+            local_rotation_period: 0.0,
+            initial_local_rotation_rad: 0.0,
         }
+    }
+
+    pub fn with_local_rotation(mut self, period: f32, initial_angle_rad: f32) -> Self {
+        self.local_rotation_period = period;
+        self.initial_local_rotation_rad = initial_angle_rad;
+        self
+    }
+
+    pub fn local_rotation_matrix(&self, sim_time: f32) -> Mat4 {
+        if self.local_rotation_period <= 0.0 {
+            return Mat4::IDENTITY;
+        }
+        let angle = self.initial_local_rotation_rad
+            + std::f32::consts::TAU * sim_time / self.local_rotation_period;
+        Mat4::rotation_z(angle)
+    }
+
+    pub fn matrices(
+        &self,
+        parent_model: &Mat4,
+        parent_rotation: &Mat4,
+        sim_time: f32,
+    ) -> (Mat4, Mat4) {
+        let local_rotation = self.local_rotation_matrix(sim_time);
+        (
+            *parent_model * local_rotation,
+            *parent_rotation * local_rotation,
+        )
     }
 }
 

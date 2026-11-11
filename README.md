@@ -161,7 +161,7 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
 - Propulsor, cuerpo, pies, ojos y boca son `CelestialComponent` rígidos que conservan el origen compartido definido en Blender.
 - Todos los componentes reutilizan una única matriz padre de modelo, por lo que orbitan y rotan solidariamente sin offsets manuales.
 - Plataforma y propulsor usan normal mapping; cuerpo, pies, ojos y boca conservan sus materiales y normales geométricas.
-- El radio de culling se calcula a partir del vértice más lejano de cada componente. Una esfera de colisión conservadora de `13.5 WU` cubre el conjunto completo.
+- El radio de culling se calcula a partir del vértice más lejano de cada componente. La esfera de colisión de `13.5 WU` cubre el cuerpo sólido central; los rieles decorativos no se incluyen en colisión para no cerrar el acceso al planeta.
 - Sus rutas se declaran mediante `[[planets.components]]` en `config/solar_system.toml`.
 - Su propulsor incorpora una llama procedural rígida orientada hacia abajo; la nave principal usa dos llamas posteriores que aumentan con `W`, permanecen cortas en reposo y disminuyen al frenar o usar reversa.
 - Posición, rotación, radio, longitud, velocidad e intensidades se configuran mediante `[[planets.thruster_flames]]` y `[[ship.thruster_flames]]`.
@@ -173,6 +173,24 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
 - Su cara permanece orientada radialmente hacia afuera, participa en frustum culling, métricas y colisiones, y deja `5 WU` de separación respecto a la envolvente sólida de Kirby.
 - Sus parámetros se declaran mediante `[[planets.moons]]` en `config/solar_system.toml`.
 
+### 8.4 Montaña rusa colgante de Kirby
+
+- Un circuito vertical de `1,424` triángulos rodea el planeta como componente visual rígido.
+- El tren colgante de `688` triángulos conserva el origen compartido de Blender y rota localmente alrededor de `Z`, por lo que sigue exactamente el círculo sin física ni búsqueda de trayectoria.
+- La vuelta dura `14 s` y se calcula analíticamente con `sim_time`; posición y orientación son independientes de FPS.
+- Riel y tren heredan la órbita, escala y giro de Kirby, participan en frustum culling y métricas, pero no en colisiones.
+- Ambos reutilizan un atlas de color de Kenney bajo licencia CC0, con ruta relativa reproducible.
+
+### 8.5 Música contextual por proximidad
+
+- `src/audio.rs` mantiene la música general y selecciona como máximo una zona planetaria según la distancia de la nave a la superficie.
+- La influencia usa `smoothstep`; el volumen se amortigua exponencialmente con tiempo real para producir crossfades independientes de FPS y de `simulation.time_scale`.
+- Durante una transición pueden coexistir únicamente la pista entrante y la saliente. La música general permanece al menos al `15%` cerca de un planeta.
+- El sistema está activo mediante `[music].enabled = true`. Existen zonas para Sol/Dyson, Tierra, Rocoso, Destruido, Kirby y Dona; Asteroide y Homero conservan la música general.
+- Las distancias de entrada y salida se declaran en `[[music.zones]]`, medidas desde la superficie efectiva del cuerpo, y solo la zona con mayor influencia se reproduce.
+- Si no existe dispositivo de salida, la aplicación continúa sin audio; rutas o archivos configurados incorrectamente producen un error explícito.
+- `Rocky_Planet.ogg` corresponde a “Desert Travel (Loop)” de DJ CrisP, publicado bajo CC0. `Kirby_Planet.ogg` y `Donut_Planet.ogg` son recursos provisionales sin licencia de redistribución verificada y deben reemplazarse antes de publicar el proyecto.
+
 ---
 
 ## 9. Dependencias Utilizadas
@@ -183,6 +201,7 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
 | `tobj` | `4.0` | Carga de archivos OBJ indexados y lectura de materiales MTL | Parseo de geometrías estándar sin sustituir transformaciones ni rasterización. |
 | `image` | `0.25` | Decodificación de archivos PNG/JPEG en memoria RAM | Conversión de imágenes en buffers de píxeles sin invocar APIs de GPU. |
 | `serde` / `toml` | `1.0` / `0.8` | Deserialización fuertemente tipada de `config/solar_system.toml` | Configuración externa declarativa y reproducible. |
+| `rodio` | `0.21.1` | Reproducción, loop y mezcla gradual de música OGG/WAV | Backend de audio aislado; no sustituye ninguna etapa gráfica, física o de simulación evaluada. |
 
 ### Modelos y Recursos 3D
 
@@ -349,7 +368,7 @@ A través de la tecla `F3`, es posible alternar el formato de reporte por segund
 
 ## 14. Pruebas Automatizadas
 
-El proyecto cuenta con una amplia batería de pruebas automatizadas deterministas divididas modularmente en 24 test suites en `tests/` que validan todas las etapas del motor:
+El proyecto cuenta con una amplia batería de pruebas automatizadas deterministas divididas modularmente en 26 test suites en `tests/` que validan todas las etapas del motor:
 - **Matemáticas 3D** (`math_tests.rs`): Operaciones y casos límite en `Vec2`, `Vec3`, `Vec4`, matrices de rotación Euler, traslación e identidad, y convenciones de proyección perspectiva.
 - **Pipeline de Renderizado y Paralelización** (`rasterizer_tests.rs` y `clipping_tests.rs`): Clipping contra el plano cercano (0, 1 y 2 triángulos generados con interpolación de atributos de posición, normal, tangente y UV), coordenadas baricéntricas, backface culling, depth buffer con linealización de profundidad, partición horizontal de pantalla en franjas disjuntas (*Scanline Slicing*), soporte para modo opaco y mezcla alfa (*Alpha Blending*), y verificación de equivalencia determinista idéntica píxel por píxel entre renderizado monohilo y multihilo en CPU.
 - **Descarte de Visión / Frustum Culling** (`frustum_tests.rs`): Extracción analítica de los 6 planos del frustum desde la matriz de Vista-Proyección ($VP = P \cdot V$) mediante Gribb-Hartmann, normalización de planos, distancias signadas, intersección analítica con esferas envolventes, descarte estricto en los 6 ejes y acumulación de métricas diagnósticas.
@@ -364,6 +383,8 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 - **Componentes Celestes** (`celestial_component_tests.rs`): Carga y presupuesto exacto de los seis componentes del planeta Kirby, materiales esperados, transformación padre compartida y cobertura completa del radio compuesto mediante la esfera de colisión aprobada.
 - **Llamas de Propulsión** (`thruster_flame_tests.rs`): Presupuesto geométrico procedural, atributos finitos, animación determinista del shader y orientación correcta respecto a los propulsores de Kirby y la nave.
 - **Luna Orbital** (`moon_tests.rs`): Carga y presupuesto de la estrella, repetición orbital, seguimiento de Kirby, orientación radial, giro propio y separación segura entre colisiones.
+- **Montaña Rusa** (`coaster_tests.rs`): Carga del atlas CC0, presupuesto exacto de triángulos, cierre de la vuelta, orientación tangencial e independencia respecto a la partición temporal.
+- **Música Contextual** (`audio_tests.rs`): Influencia por distancia a superficie, selección exclusiva de zona y crossfade exponencial determinista sin requerir dispositivo de audio.
 - **Física y Dinámica** (`physics_tests.rs`): Aceleración lineal y boost, recuperación gradual del límite de velocidad, daño solar por distancia, fricción, rotaciones en 3 ejes, cinemática orbital determinista, matrices de modelo en `CelestialBody` y resolución elástica con restitución parcial ($e = 0.70$) con velocidad de impacto.
 - **Sistema de Partículas y Chispas en CPU** (`particles_tests.rs`): Emisión cónica de partículas de impacto, ciclo de vida con decaimiento por arrastre proporcional a $dt$, acotamiento de capacidad máxima sin asignaciones dinámicas en caliente, enfriamiento térmico dinámico, renderizado aditivo saturado y prueba de profundidad estricta contra el Z-buffer (+ margen de tolerancia) para evitar oclusión por la propia superficie.
 - **Atracción Gravitatoria Planetaria** (`gravity_tests.rs`): Validación de la atracción gravitatoria newtoniana en `ShipState::apply_gravitational_attraction`, decaimiento cúbico suave (*smoothstep*) en los límites de la esfera de influencia, aceleración cero fuera del radio o con fuerza nula, protección contra singularidades en la superficie del astro y cálculo de radio efectivo por defecto vs. explícito en TOML.
@@ -401,11 +422,13 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
   - Implementación del sistema de paralelización de renderizado en CPU sin dependencias externas mediante partición horizontal de pantalla en franjas contiguas disjuntas (*Scanline Slicing*) con `std::thread::scope` en rasterización y `SkyShader`.
   - Implementación del HUD táctico futurista modular desacoplado en CPU con micro-fuente bitmap 5x7 propia, banner de observación/alerta, barra de vida con gradiente de color, velocímetro curvo con escala en KM/H, paneles colapsables de controles (`[H]`) y estadísticas de rendimiento (`[F3]`), y modo de visor de cabina en primera persona (`[V]`).
   - Ampliación de la resolución del framebuffer y ventana de renderizado a formato panorámico 16:9 (`1280x720`).
-  - Batería de pruebas deterministas modulares (24 suites) y documentación técnica sincronizada.
+  - Batería de pruebas deterministas modulares (26 suites) y documentación técnica sincronizada.
   - Integración del planeta destruido y su anillo orbital determinista con rotación independiente, colisiones y descarte por frustum.
   - Integración del planeta dona gigante inclinado 30° con campo de fuerza visible y 32 objetos dulces en corteza toroidal.
   - Integración jerárquica del planeta Kirby mediante componentes rígidos con origen y transformación padre compartidos.
   - Integración de la luna estrella de Kirby con órbita inclinada, giro propio, colisión y descarte por frustum.
+  - Integración de la montaña rusa colgante de Kirby con tren animado analíticamente y atlas CC0.
+  - Implementación de la infraestructura de música contextual con selección por proximidad y crossfade independiente de FPS.
 
 ---
 
@@ -451,7 +474,9 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 | **Escombros orbitales** | `assets/models/objects/escombro1/` y `escombro2/` | Dos variantes reutilizadas en el anillo del planeta destruido | Modelos creados por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Planeta Kirby** | `assets/models/kirby_planet/` y `assets/sources/kirby_planet/` | Plataforma orbital, propulsor y personaje compuesto por cuerpo, pies, ojos y boca | Modelado y ensamblado por Juanda en Blender; texturas generadas con asistencia de Gemini y revisadas por el equipo |
 | **Luna estrella** | `assets/models/kirby_planet/star_moon/` y `assets/sources/Star_Moon/` | Luna orbital amarilla del planeta de diversiones Kirby | Modelo propio creado y optimizado por Juanda en Blender |
+| **Montaña rusa colgante** | `assets/models/objects/{roller_coaster,coaster_train}/`, `coaster_colormap.png` y `assets/sources/roller_coaster.blend` | Circuito vertical y tren animado alrededor de Kirby | Piezas de Coaster Kit 1.0 por Kenney, licencia CC0; ensambladas, escaladas y exportadas por Juanda |
 | **Luna Homero** | `assets/models/homer/homero.obj` / `homero.mtl` | Cuerpo celeste compuesto satelital (5 submallas multi-material) que orbita el planeta dona | Modelo 3D exportado desde Blender con materiales para piel, ojos, camisa, boca y pelo |
 | **Planeta Terrestre** | `assets/models/rocky/rocky.obj` | Planeta biosfera verde con manchas oceánicas azules sombreado analíticamente con `EarthLikeShader` | Reutilización de malla esférica con nuevo shader procedural CPU continuo y tilt axial de 23.5° |
 | **Árboles de Superficie** | `assets/models/objects/trees/` | Robles (`Oak_Tree_Summer.obj`) y pinos (`Pine_Tree_2_Summer.obj`) distribuidos en la corteza terrestre | Modelos OBJ con materiales MTL de vegetación integrados con Espiral de Fibonacci y autoenraizamiento |
 | **Ciudad de Superficie** | `assets/models/objects/city/` | Casas (`house.obj`), edificios altos (`building.obj`) y fábricas (`factory.obj`) | Estructuras urbanas de baja poligonización con orientación perpendicular a la esfera |
+| **Música ambiental general y planetaria** | `assets/audio/music/*.ogg` | Fondo general y crossfade contextual por proximidad | `Rocky_Planet.ogg`: “Desert Travel (Loop)” por DJ CrisP, [OpenGameArt](https://opengameart.org/content/desert-travel-loop), CC0. Las demás pistas fueron aportadas por el equipo; la procedencia exacta de General, Tierra, Destruido y Dyson está pendiente de verificación. Kirby y Dona usan temporalmente música de videojuegos sin licencia de redistribución verificada y no deben distribuirse públicamente. |

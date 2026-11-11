@@ -10,10 +10,67 @@ pub struct AppConfig {
     pub ship: ShipConfig,
     pub enemies: EnemyConfig,
     pub camera: CameraConfig,
+    #[serde(default)]
+    pub music: MusicConfig,
     pub sun: SunConfig,
     pub planets: Vec<PlanetConfig>,
     #[serde(default)]
     pub dyson_sphere: Option<DysonSphereConfig>,
+}
+
+fn default_music_master_volume() -> f32 {
+    0.70
+}
+
+fn default_music_crossfade_seconds() -> f32 {
+    2.5
+}
+
+fn default_general_min_volume() -> f32 {
+    0.15
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MusicZoneConfig {
+    pub body_id: String,
+    pub path: String,
+    pub inner_distance: f32,
+    pub outer_distance: f32,
+    #[serde(default = "default_music_zone_volume")]
+    pub volume: f32,
+}
+
+fn default_music_zone_volume() -> f32 {
+    1.0
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MusicConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub general_path: String,
+    #[serde(default = "default_music_master_volume")]
+    pub master_volume: f32,
+    #[serde(default = "default_music_crossfade_seconds")]
+    pub crossfade_seconds: f32,
+    #[serde(default = "default_general_min_volume")]
+    pub general_min_volume: f32,
+    #[serde(default)]
+    pub zones: Vec<MusicZoneConfig>,
+}
+
+impl Default for MusicConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            general_path: String::new(),
+            master_volume: default_music_master_volume(),
+            crossfade_seconds: default_music_crossfade_seconds(),
+            general_min_volume: default_general_min_volume(),
+            zones: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -173,6 +230,11 @@ pub struct SurfaceObjectConfig {
 pub struct PlanetComponentConfig {
     pub name: String,
     pub model_path: String,
+    /// Periodo de una vuelta local completa alrededor del eje Z. Cero mantiene el componente fijo.
+    #[serde(default)]
+    pub local_rotation_period: f32,
+    #[serde(default)]
+    pub initial_local_rotation_deg: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -631,6 +693,9 @@ impl AppConfig {
                 if component.name.trim().is_empty()
                     || component.model_path.trim().is_empty()
                     || !component_names.insert(component.name.as_str())
+                    || !component.local_rotation_period.is_finite()
+                    || component.local_rotation_period < 0.0
+                    || !component.initial_local_rotation_deg.is_finite()
                 {
                     return Err(format!(
                         "[{}] Componente celeste inválido o duplicado en planeta '{}'",
@@ -667,6 +732,37 @@ impl AppConfig {
                         p, planet.id
                     ));
                 }
+            }
+        }
+
+        if !self.music.master_volume.is_finite()
+            || !(0.0..=1.0).contains(&self.music.master_volume)
+            || !self.music.crossfade_seconds.is_finite()
+            || self.music.crossfade_seconds <= 0.0
+            || !self.music.general_min_volume.is_finite()
+            || !(0.0..=1.0).contains(&self.music.general_min_volume)
+            || (self.music.enabled && self.music.general_path.trim().is_empty())
+        {
+            return Err(format!("[{}] Configuración global de música inválida", p));
+        }
+
+        let mut music_body_ids = HashSet::new();
+        for zone in &self.music.zones {
+            if zone.body_id.trim().is_empty()
+                || zone.path.trim().is_empty()
+                || !music_body_ids.insert(zone.body_id.as_str())
+                || !ids.contains(zone.body_id.as_str())
+                || !zone.inner_distance.is_finite()
+                || zone.inner_distance < 0.0
+                || !zone.outer_distance.is_finite()
+                || zone.outer_distance <= zone.inner_distance
+                || !zone.volume.is_finite()
+                || !(0.0..=1.0).contains(&zone.volume)
+            {
+                return Err(format!(
+                    "[{}] Zona de música inválida para el cuerpo '{}'",
+                    p, zone.body_id
+                ));
             }
         }
 
