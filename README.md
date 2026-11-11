@@ -309,10 +309,21 @@ El simulador implementa un Head-Up Display (HUD) táctico de ciencia ficción co
 7. **Modo Cabina / Visor de 1ra Persona**:
    - Conmutable mediante `[V]`. Sitúa la cámara en la cabina del piloto (`eye = ship.position + forward * 0.9 + up * 0.25`), omite el exterior de la nave para evitar clipping y dibuja un marco de visor holográfico angular en el framebuffer.
 8. **Indicadores de Planetas y Flechas Proporcionales**:
-   - Para cada planeta visible en pantalla, se proyecta analíticamente su cúspide superior `(tx, ty)` y su radio visible en píxeles.
+   - Para cada planeta visible en pantalla (y el Sol), se proyecta analíticamente su cúspide superior `(tx, ty)` y su radio visible en píxeles.
    - **A larga distancia**: Dibuja una flecha triangular $\nabla$ orientada hacia abajo apuntando a la parte superior del planeta. El tamaño del triángulo escala proporcionalmente al radio proyectado del planeta en pantalla (`projected_radius / 6`), adaptándose automáticamente si el tamaño del planeta cambia en el archivo de configuración.
    - **Al aproximarse (`distancia < radio * 6.5`)**: Muestra el nombre en mayúsculas y la distancia en tiempo real (ej. `TIERRA [42 WU]`).
-   - **En rango orbital (`nearby_planet_idx`)**: Resalta en cian la tecla de interacción orbital: `[C] VISTA PANORAMICA` (o `[C] SALIR PANORAMICA`).
+   - **En rango orbital (`nearby_celestial`)**: Resalta en cian la tecla de interacción orbital: `[C] VISTA PANORAMICA` (o `[C] SALIR PANORAMICA`).
+9. **HUD Panorámico de Inspección y Registro de Bitácora / Historia (`StoryBox`)**:
+   - Al aproximarse a cualquier planeta o al Sol y presionar `[C]`, se activa la vista panorámica orbital exterior.
+   - El HUD oculta los indicadores normales de combate y vuelo para ofrecer una experiencia cinematográfica limpia.
+   - **Título Superior Central**: Nombre del cuerpo celeste centrado en grande (escala 2) en color dorado con corchetes tecnológicos y subtítulo telemétrico.
+   - **Panel Lateral Derecho ("DATOS GENERALES")**: Tarjeta tecnológica con ID, tipo astronómico, radio en WU, período orbital, rotación axial, aceleración gravitatoria, estructuras en superficie, satélites y shader de CPU evaluado.
+   - **Componente Reutilizable de Cuadro de Historia / Bitácora (`StoryBox`)**:
+     - Componente modular desacoplado (`draw_story_dialog_box`) que recibe propiedades (`StoryBoxProps`), tamaño fijo y texto de historia.
+     - Lee los textos centralizados desde `config/lore.toml` indexados por identificador de astro (`sol`, `tierra`, `dona`, `kirby`, `destruido`, `rocoso`, `asteroide`, `homero`).
+     - Envuelve el texto en líneas ajustadas al ancho de pantalla (`wrap_text_to_lines`) y divide párrafos largos en páginas confortables (`paginate_lore`).
+     - **Navegación con `[ENTER]`**: En páginas intermedias muestra `[ENTER] SIGUIENTE PAGINA [>]` indicando `(Pág. X/Y)`. Al alcanzar la última página, muestra `[ENTER] CERRAR REGISTRO [X]`. Al pulsar `[ENTER]` en la última página, el cuadro se cierra y deja la vista panorámica completamente despejada con una barra inferior discreta: `[C] SALIR DE VISTA | [ENTER] REABRIR REGISTRO`. Al pulsar `[ENTER]` nuevamente, el cuadro se reabre desde el inicio.
+     - **Tolerancia a fallos**: Si un astro no posee lore en `lore.toml` o el archivo no existe, muestra un mensaje informativo seguro (`"Sin registros de bitacora disponibles para este sector."`) sin causar panics.
 
 ### Resolución Panorámica y Rendimiento
 - **Resolución**: Ampliada a `1280x720` (16:9), ofreciendo un área central despejada de más de 780 píxeles entre los paneles laterales.
