@@ -6,6 +6,9 @@ Proyecto final del curso de **Gráficas por Computadora (2026)**. Consiste en un
 - **Sergio Estuardo Tan Coromac** - `24759`
 - **Juan Daniel Ordoñez Sierra** - `24979`
 
+### Integrantes
+ **Video Demostracion** = (https://youtu.be/eLFHdM-Tj28?si=YsPkJliP7Zd0bOhM)
+
 ---
 
 ## 1. Propósito del Proyecto
