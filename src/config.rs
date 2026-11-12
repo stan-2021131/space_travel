@@ -1,0 +1,794 @@
+use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::Path;
+
+/// Configuración global de la aplicación deserializada desde archivo TOML.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AppConfig {
+    pub simulation: SimulationConfig,
+    pub ship: ShipConfig,
+    pub enemies: EnemyConfig,
+    pub camera: CameraConfig,
+    #[serde(default)]
+    pub music: MusicConfig,
+    pub sun: SunConfig,
+    pub planets: Vec<PlanetConfig>,
+    #[serde(default)]
+    pub dyson_sphere: Option<DysonSphereConfig>,
+}
+
+fn default_music_master_volume() -> f32 {
+    0.70
+}
+
+fn default_music_crossfade_seconds() -> f32 {
+    2.5
+}
+
+fn default_general_min_volume() -> f32 {
+    0.15
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MusicZoneConfig {
+    pub body_id: String,
+    pub path: String,
+    pub inner_distance: f32,
+    pub outer_distance: f32,
+    #[serde(default = "default_music_zone_volume")]
+    pub volume: f32,
+}
+
+fn default_music_zone_volume() -> f32 {
+    1.0
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MusicConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub general_path: String,
+    #[serde(default = "default_music_master_volume")]
+    pub master_volume: f32,
+    #[serde(default = "default_music_crossfade_seconds")]
+    pub crossfade_seconds: f32,
+    #[serde(default = "default_general_min_volume")]
+    pub general_min_volume: f32,
+    #[serde(default)]
+    pub zones: Vec<MusicZoneConfig>,
+}
+
+impl Default for MusicConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            general_path: String::new(),
+            master_volume: default_music_master_volume(),
+            crossfade_seconds: default_music_crossfade_seconds(),
+            general_min_volume: default_general_min_volume(),
+            zones: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnemyConfig {
+    pub model_path: String,
+    pub target_length_wu: f32,
+    pub model_yaw_offset_deg: f32,
+    pub initial_count: usize,
+    pub max_enemies: usize,
+    pub wave_increment: usize,
+    pub base_health: f32,
+    pub health_growth_per_wave: f32,
+    pub approaching_speed_ratio: f32,
+    pub supervising_speed_ratio: f32,
+    pub attacking_speed_ratio: f32,
+    pub steering_response: f32,
+    pub supervising_distance: f32,
+    pub preferred_distance: f32,
+    pub fire_range: f32,
+    pub enemy_fire_interval: f32,
+    pub enemy_projectile_speed: f32,
+    pub enemy_projectile_damage: f32,
+    pub player_fire_interval: f32,
+    pub player_projectile_speed: f32,
+    pub player_projectile_damage: f32,
+    pub projectile_lifetime: f32,
+    pub projectile_radius: f32,
+    pub collision_radius: f32,
+    pub player_collision_radius: f32,
+    pub player_max_health: f32,
+    pub spawn_behind_sun_clearance: f32,
+    pub spawn_spread: f32,
+    pub reinforcement_distance: f32,
+    pub wave_delay: f32,
+    pub peace_after_no_fire_seconds: f32,
+    pub player_respawn_delay: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SimulationConfig {
+    #[serde(default = "default_seed")]
+    pub seed: u32,
+    pub time_scale: f32,
+    pub fixed_timestep: f32,
+    pub max_frame_delta: f32,
+}
+
+fn default_seed() -> u32 {
+    67
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ThrusterFlameConfig {
+    pub position: [f32; 3],
+    pub rotation_deg: [f32; 3],
+    pub radius: f32,
+    pub length: f32,
+    pub animation_speed: f32,
+    pub idle_intensity: f32,
+    pub active_intensity: f32,
+}
+
+impl ThrusterFlameConfig {
+    fn is_valid(&self) -> bool {
+        self.position.iter().all(|value| value.is_finite())
+            && self.rotation_deg.iter().all(|value| value.is_finite())
+            && self.radius.is_finite()
+            && self.radius > 0.0
+            && self.length.is_finite()
+            && self.length > 0.0
+            && self.animation_speed.is_finite()
+            && self.animation_speed > 0.0
+            && self.idle_intensity.is_finite()
+            && (0.0..=1.0).contains(&self.idle_intensity)
+            && self.active_intensity.is_finite()
+            && (0.0..=1.0).contains(&self.active_intensity)
+            && self.active_intensity >= self.idle_intensity
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ShipConfig {
+    pub model_path: String,
+    pub target_length_wu: f32,
+    pub initial_position: [f32; 3],
+    pub initial_rotation_deg: [f32; 3],
+    pub acceleration: f32,
+    pub reverse_acceleration: f32,
+    pub braking_force: f32,
+    pub drag: f32,
+    pub max_speed: f32,
+    pub yaw_speed: f32,
+    pub pitch_speed: f32,
+    pub roll_speed: f32,
+    pub collision_radius: f32,
+    pub boost_acceleration: f32,
+    pub boost_max_speed: f32,
+    pub boost_release_drag: f32,
+    pub boost_flame_multiplier: f32,
+    #[serde(default)]
+    pub thruster_flames: Vec<ThrusterFlameConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CameraConfig {
+    pub distance_behind: f32,
+    pub height_above: f32,
+    pub look_ahead: f32,
+    pub position_smoothing: f32,
+    pub rotation_smoothing: f32,
+    pub fov_deg: f32,
+    pub near_plane: f32,
+    pub far_plane: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SunConfig {
+    pub id: String,
+    #[serde(default)]
+    pub lore_id: Option<String>,
+    pub model_path: String,
+    pub radius: f32,
+    pub collision_margin: f32,
+    pub rotation_period: f32,
+    pub shader: String,
+    #[serde(default)]
+    pub gravity_strength: f32,
+    #[serde(default)]
+    pub gravity_radius: Option<f32>,
+    #[serde(default)]
+    pub visible_gravity: bool,
+    pub damage_radius: f32,
+    pub max_damage_per_second: f32,
+}
+
+impl SunConfig {
+    pub fn effective_gravity_radius(&self) -> f32 {
+        self.gravity_radius.unwrap_or(self.radius + 4.0)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SurfaceObjectConfig {
+    pub name: String,
+    pub model_path: String,
+    #[serde(default = "default_surface_count")]
+    pub count: usize,
+    #[serde(default = "default_surface_scale")]
+    pub scale: f32,
+    #[serde(default = "default_surface_max_distance")]
+    pub max_distance: f32,
+    #[serde(default = "default_surface_fade_range")]
+    pub fade_range: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlanetComponentConfig {
+    pub name: String,
+    pub model_path: String,
+    /// Periodo de una vuelta local completa alrededor del eje Z. Cero mantiene el componente fijo.
+    #[serde(default)]
+    pub local_rotation_period: f32,
+    #[serde(default)]
+    pub initial_local_rotation_deg: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MoonConfig {
+    pub name: String,
+    pub model_path: String,
+    pub radius: f32,
+    pub orbital_radius: f32,
+    pub orbital_period: f32,
+    pub rotation_period: f32,
+    pub initial_orbital_angle_deg: f32,
+    pub orbit_tilt_deg: f32,
+    #[serde(default)]
+    pub collision_margin: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DebrisRingConfig {
+    pub model_paths: Vec<String>,
+    pub count: usize,
+    pub inner_radius: f32,
+    pub outer_radius: f32,
+    pub tilt_deg: f32,
+    pub rotation_period: f32,
+    pub min_scale: f32,
+    pub max_scale: f32,
+    pub height_variation: f32,
+    pub min_spin_period: f32,
+    pub max_spin_period: f32,
+    #[serde(default)]
+    pub collision_margin: f32,
+}
+
+fn default_dyson_enabled() -> bool {
+    true
+}
+
+fn default_dyson_rotation_speed() -> f32 {
+    0.025
+}
+
+fn default_dyson_gravity_strength() -> f32 {
+    6.0
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DysonSphereConfig {
+    #[serde(default = "default_dyson_enabled")]
+    pub enabled: bool,
+    pub model_path: String,
+    pub radius: f32,
+    #[serde(default = "default_dyson_rotation_speed")]
+    pub rotation_speed: f32,
+    #[serde(default)]
+    pub collision_radius: Option<f32>,
+    #[serde(default)]
+    pub gravity_radius: Option<f32>,
+    #[serde(default = "default_dyson_gravity_strength")]
+    pub gravity_strength: f32,
+}
+
+impl DysonSphereConfig {
+    pub fn effective_collision_radius(&self) -> f32 {
+        self.collision_radius.unwrap_or(self.radius)
+    }
+
+    pub fn effective_gravity_radius(&self) -> f32 {
+        self.gravity_radius.unwrap_or(self.radius * 1.45)
+    }
+}
+
+fn default_surface_count() -> usize {
+    6
+}
+
+fn default_surface_scale() -> f32 {
+    0.035
+}
+
+fn default_surface_max_distance() -> f32 {
+    55.0
+}
+
+fn default_surface_fade_range() -> f32 {
+    15.0
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlanetConfig {
+    pub id: String,
+    #[serde(default)]
+    pub lore_id: Option<String>,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default = "default_mesh_type")]
+    pub mesh_type: String,
+    pub model_path: String,
+    #[serde(default)]
+    pub subdivisions: u32,
+    #[serde(default)]
+    pub deformation_amplitude: f32,
+    #[serde(default = "default_deformation_frequency")]
+    pub deformation_frequency: f32,
+    pub radius: f32,
+    pub orbital_radius: f32,
+    pub orbital_period: f32,
+    pub rotation_period: f32,
+    pub initial_orbital_angle_deg: f32,
+    pub collision_margin: f32,
+    pub shader: String,
+    #[serde(default)]
+    pub gravity_strength: f32,
+    #[serde(default)]
+    pub gravity_radius: Option<f32>,
+    #[serde(default)]
+    pub visible_gravity: bool,
+    #[serde(default)]
+    pub axial_tilt_deg: f32,
+    #[serde(default)]
+    pub surface_objects: Vec<SurfaceObjectConfig>,
+    #[serde(default)]
+    pub debris_rings: Vec<DebrisRingConfig>,
+    #[serde(default)]
+    pub components: Vec<PlanetComponentConfig>,
+    #[serde(default)]
+    pub thruster_flames: Vec<ThrusterFlameConfig>,
+    #[serde(default)]
+    pub moons: Vec<MoonConfig>,
+}
+
+impl PlanetConfig {
+    pub fn effective_gravity_radius(&self) -> f32 {
+        self.gravity_radius.unwrap_or(self.radius + 4.0)
+    }
+}
+
+/// Entrada de lore o registro de bitácora para un cuerpo celeste.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+pub struct CelestialLoreEntry {
+    #[serde(default)]
+    pub nombre: String,
+    #[serde(default)]
+    pub paginas: Vec<String>,
+}
+
+/// Diccionario de registros de bitácora deserializados desde archivo TOML.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct LoreConfig {
+    #[serde(flatten)]
+    pub entries: HashMap<String, CelestialLoreEntry>,
+}
+
+impl LoreConfig {
+    /// Carga y deserializa el archivo TOML de lore de cuerpos celestes.
+    pub fn load_from_file(path: &Path) -> Result<Self, String> {
+        let content = fs::read_to_string(path)
+            .map_err(|e| format!("Error al leer archivo de lore '{}': {}", path.display(), e))?;
+
+        let lore: LoreConfig = toml::from_str(&content).map_err(|e| {
+            format!(
+                "Error de sintaxis en archivo de lore '{}': {}",
+                path.display(),
+                e
+            )
+        })?;
+
+        Ok(lore)
+    }
+
+    /// Obtiene la entrada de lore correspondiente a un identificador.
+    pub fn get_entry(&self, id: &str) -> Option<&CelestialLoreEntry> {
+        self.entries.get(id)
+    }
+}
+
+fn default_mesh_type() -> String {
+    "model".to_string()
+}
+
+fn default_deformation_frequency() -> f32 {
+    0.5
+}
+
+impl AppConfig {
+    /// Carga y deserializa el archivo TOML de configuración.
+    pub fn load_from_file(path: &Path) -> Result<Self, String> {
+        let content = fs::read_to_string(path).map_err(|e| {
+            format!(
+                "Error al leer archivo de configuración '{}': {}",
+                path.display(),
+                e
+            )
+        })?;
+
+        let config: AppConfig = toml::from_str(&content).map_err(|e| {
+            format!(
+                "Error de sintaxis en archivo de configuración '{}': {}",
+                path.display(),
+                e
+            )
+        })?;
+
+        config.validate(path)?;
+        Ok(config)
+    }
+
+    /// Valida las relaciones físicas y semánticas fundamentales del sistema solar.
+    pub fn validate(&self, source_path: &Path) -> Result<(), String> {
+        let p = source_path.display();
+
+        if self.simulation.time_scale <= 0.0 || self.simulation.fixed_timestep <= 0.0 {
+            return Err(format!(
+                "[{}] Parámetros de simulación deben ser mayores a 0",
+                p
+            ));
+        }
+
+        if self.sun.radius <= 0.0 {
+            return Err(format!("[{}] El radio del Sol debe ser positivo", p));
+        }
+
+        if self.camera.near_plane <= 0.0 || self.camera.near_plane >= self.camera.far_plane {
+            return Err(format!(
+                "[{}] Planos de cámara inválidos: near ({}) debe ser menor que far ({})",
+                p, self.camera.near_plane, self.camera.far_plane
+            ));
+        }
+
+        if self.ship.max_speed <= 0.0
+            || self.ship.acceleration <= 0.0
+            || !self.ship.boost_acceleration.is_finite()
+            || self.ship.boost_acceleration <= self.ship.acceleration
+            || !self.ship.boost_max_speed.is_finite()
+            || self.ship.boost_max_speed <= self.ship.max_speed
+            || !self.ship.boost_release_drag.is_finite()
+            || self.ship.boost_release_drag <= 0.0
+            || !self.ship.boost_flame_multiplier.is_finite()
+            || self.ship.boost_flame_multiplier <= 1.0
+            || self.ship.boost_flame_multiplier > 2.5
+        {
+            return Err(format!(
+                "[{}] Parámetros de nave (max_speed, acceleration) deben ser positivos",
+                p
+            ));
+        }
+        if self
+            .ship
+            .thruster_flames
+            .iter()
+            .any(|flame| !flame.is_valid())
+        {
+            return Err(format!(
+                "[{}] Configuración de llamas de la nave inválida",
+                p
+            ));
+        }
+
+        let enemy = &self.enemies;
+        if enemy.initial_count == 0
+            || enemy.max_enemies < enemy.initial_count
+            || enemy.target_length_wu <= 0.0
+            || enemy.base_health <= 0.0
+            || !enemy.supervising_speed_ratio.is_finite()
+            || enemy.supervising_speed_ratio <= 0.0
+            || enemy.supervising_speed_ratio >= enemy.attacking_speed_ratio
+            || !enemy.attacking_speed_ratio.is_finite()
+            || enemy.attacking_speed_ratio >= enemy.approaching_speed_ratio
+            || !enemy.approaching_speed_ratio.is_finite()
+            || enemy.approaching_speed_ratio > 1.0
+            || enemy.steering_response <= 0.0
+            || !enemy.supervising_distance.is_finite()
+            || enemy.supervising_distance <= enemy.preferred_distance
+            || enemy.preferred_distance <= 0.0
+            || enemy.fire_range <= 0.0
+            || enemy.enemy_fire_interval <= 0.0
+            || enemy.enemy_projectile_speed <= 0.0
+            || enemy.enemy_projectile_damage <= 0.0
+            || enemy.player_fire_interval <= 0.0
+            || enemy.player_projectile_speed <= 0.0
+            || enemy.player_projectile_damage <= 0.0
+            || enemy.projectile_lifetime <= 0.0
+            || enemy.projectile_radius <= 0.0
+            || enemy.collision_radius <= 0.0
+            || enemy.player_collision_radius <= 0.0
+            || enemy.player_max_health <= 0.0
+            || enemy.spawn_behind_sun_clearance <= 0.0
+            || enemy.spawn_spread <= 0.0
+            || enemy.reinforcement_distance <= 0.0
+            || enemy.wave_delay <= 0.0
+            || enemy.peace_after_no_fire_seconds <= 0.0
+            || enemy.player_respawn_delay <= 0.0
+            || !enemy.model_yaw_offset_deg.is_finite()
+        {
+            return Err(format!("[{}] Configuración de enemigos inválida", p));
+        }
+
+        if self.camera.position_smoothing <= 0.0 || self.camera.rotation_smoothing <= 0.0 {
+            return Err(format!("[{}] Suavizado de cámara debe ser mayor a 0", p));
+        }
+
+        if !self.sun.gravity_strength.is_finite() || self.sun.gravity_strength < 0.0 {
+            return Err(format!(
+                "[{}] Intensidad de gravedad del sol debe ser no negativa y finita",
+                p
+            ));
+        }
+        if !self.sun.damage_radius.is_finite()
+            || self.sun.damage_radius <= self.sun.radius + self.sun.collision_margin
+            || !self.sun.max_damage_per_second.is_finite()
+            || self.sun.max_damage_per_second <= 0.0
+        {
+            return Err(format!("[{}] Configuración de daño solar inválida", p));
+        }
+        if !self.sun.effective_gravity_radius().is_finite()
+            || self.sun.effective_gravity_radius() < self.sun.radius
+        {
+            return Err(format!(
+                "[{}] Radio de gravedad del sol debe ser mayor o igual a su radio físico",
+                p
+            ));
+        }
+
+        let mut ids = HashSet::new();
+        ids.insert(self.sun.id.as_str());
+
+        for planet in &self.planets {
+            if !planet.radius.is_finite() || planet.radius <= 0.0 {
+                return Err(format!(
+                    "[{}] Radio de planeta '{}' debe ser un número finito positivo",
+                    p, planet.id
+                ));
+            }
+            if !planet.axial_tilt_deg.is_finite() {
+                return Err(format!(
+                    "[{}] Inclinación axial de planeta '{}' debe ser un número finito",
+                    p, planet.id
+                ));
+            }
+            if !planet.gravity_strength.is_finite() || planet.gravity_strength < 0.0 {
+                return Err(format!(
+                    "[{}] Intensidad de gravedad de planeta '{}' debe ser no negativa y finita",
+                    p, planet.id
+                ));
+            }
+            if !planet.effective_gravity_radius().is_finite()
+                || planet.effective_gravity_radius() < planet.radius
+            {
+                return Err(format!(
+                    "[{}] Radio de gravedad de planeta '{}' debe ser mayor o igual a su radio físico",
+                    p, planet.id
+                ));
+            }
+            if let Some(ref pid) = planet.parent_id {
+                if pid == &planet.id {
+                    return Err(format!(
+                        "[{}] El cuerpo celeste '{}' no puede ser su propio padre orbital",
+                        p, planet.id
+                    ));
+                }
+                let parent = self.planets.iter().find(|p| &p.id == pid);
+                if let Some(parent) = parent {
+                    if parent.parent_id.is_some() {
+                        return Err(format!(
+                            "[{}] El astro padre '{}' de la luna '{}' no puede ser a su vez una luna dependiente",
+                            p, parent.id, planet.id
+                        ));
+                    }
+                    if planet.orbital_radius <= parent.radius {
+                        return Err(format!(
+                            "[{}] Órbita de la luna '{}' ({}) colisiona con su astro padre '{}' (radio {})",
+                            p, planet.id, planet.orbital_radius, parent.id, parent.radius
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "[{}] Planeta padre '{}' referenciado por luna '{}' no existe en la configuración",
+                        p, pid, planet.id
+                    ));
+                }
+            } else if planet.orbital_radius <= self.sun.radius {
+                return Err(format!(
+                    "[{}] Órbita de '{}' ({}) colisiona con el Sol (radio {})",
+                    p, planet.id, planet.orbital_radius, self.sun.radius
+                ));
+            }
+            if !ids.insert(planet.id.as_str()) {
+                return Err(format!(
+                    "[{}] ID duplicado en configuración: '{}'",
+                    p, planet.id
+                ));
+            }
+            if planet.mesh_type != "icosphere" && planet.model_path.trim().is_empty() {
+                return Err(format!(
+                    "[{}] Planeta '{}' con mesh_type '{}' requiere model_path no vacío",
+                    p, planet.id, planet.mesh_type
+                ));
+            }
+            if planet.subdivisions > 5 {
+                return Err(format!(
+                    "[{}] Subdivisions en '{}' ({}) excede el límite máximo seguro (5)",
+                    p, planet.id, planet.subdivisions
+                ));
+            }
+            for obj in &planet.surface_objects {
+                if obj.count == 0
+                    || obj.scale <= 0.0
+                    || obj.max_distance <= 0.0
+                    || obj.fade_range <= 0.0
+                {
+                    return Err(format!(
+                        "[{}] Parámetros de objeto de superficie '{}' en planeta '{}' deben ser positivos",
+                        p, obj.name, planet.id
+                    ));
+                }
+                if obj.fade_range >= obj.max_distance {
+                    return Err(format!(
+                        "[{}] En objeto de superficie '{}' del planeta '{}': fade_range ({}) debe ser menor que max_distance ({})",
+                        p, obj.name, planet.id, obj.fade_range, obj.max_distance
+                    ));
+                }
+            }
+            for ring in &planet.debris_rings {
+                let invalid_model_path = ring.model_paths.is_empty()
+                    || ring.model_paths.iter().any(|path| path.trim().is_empty());
+                if invalid_model_path
+                    || ring.count == 0
+                    || ring.count > 256
+                    || !ring.inner_radius.is_finite()
+                    || ring.inner_radius <= planet.radius + planet.collision_margin
+                    || !ring.outer_radius.is_finite()
+                    || ring.outer_radius <= ring.inner_radius
+                    || !ring.tilt_deg.is_finite()
+                    || !ring.rotation_period.is_finite()
+                    || ring.rotation_period <= 0.0
+                    || !ring.min_scale.is_finite()
+                    || ring.min_scale <= 0.0
+                    || !ring.max_scale.is_finite()
+                    || ring.max_scale < ring.min_scale
+                    || !ring.height_variation.is_finite()
+                    || ring.height_variation < 0.0
+                    || !ring.min_spin_period.is_finite()
+                    || ring.min_spin_period <= 0.0
+                    || !ring.max_spin_period.is_finite()
+                    || ring.max_spin_period < ring.min_spin_period
+                    || !ring.collision_margin.is_finite()
+                    || ring.collision_margin < 0.0
+                {
+                    return Err(format!(
+                        "[{}] Configuración de anillo de escombros inválida en planeta '{}'",
+                        p, planet.id
+                    ));
+                }
+            }
+            let mut component_names = HashSet::new();
+            for component in &planet.components {
+                if component.name.trim().is_empty()
+                    || component.model_path.trim().is_empty()
+                    || !component_names.insert(component.name.as_str())
+                    || !component.local_rotation_period.is_finite()
+                    || component.local_rotation_period < 0.0
+                    || !component.initial_local_rotation_deg.is_finite()
+                {
+                    return Err(format!(
+                        "[{}] Componente celeste inválido o duplicado en planeta '{}'",
+                        p, planet.id
+                    ));
+                }
+            }
+            if planet.thruster_flames.iter().any(|flame| !flame.is_valid()) {
+                return Err(format!(
+                    "[{}] Configuración de llamas inválida en planeta '{}'",
+                    p, planet.id
+                ));
+            }
+            let mut moon_names = HashSet::new();
+            for moon in &planet.moons {
+                if moon.name.trim().is_empty()
+                    || moon.model_path.trim().is_empty()
+                    || !moon_names.insert(moon.name.as_str())
+                    || !moon.radius.is_finite()
+                    || moon.radius <= 0.0
+                    || !moon.orbital_radius.is_finite()
+                    || moon.orbital_radius <= planet.radius + planet.collision_margin + moon.radius
+                    || !moon.orbital_period.is_finite()
+                    || moon.orbital_period <= 0.0
+                    || !moon.rotation_period.is_finite()
+                    || moon.rotation_period <= 0.0
+                    || !moon.initial_orbital_angle_deg.is_finite()
+                    || !moon.orbit_tilt_deg.is_finite()
+                    || !moon.collision_margin.is_finite()
+                    || moon.collision_margin < 0.0
+                {
+                    return Err(format!(
+                        "[{}] Configuración de luna inválida en planeta '{}'",
+                        p, planet.id
+                    ));
+                }
+            }
+        }
+
+        if !self.music.master_volume.is_finite()
+            || !(0.0..=1.0).contains(&self.music.master_volume)
+            || !self.music.crossfade_seconds.is_finite()
+            || self.music.crossfade_seconds <= 0.0
+            || !self.music.general_min_volume.is_finite()
+            || !(0.0..=1.0).contains(&self.music.general_min_volume)
+            || (self.music.enabled && self.music.general_path.trim().is_empty())
+        {
+            return Err(format!("[{}] Configuración global de música inválida", p));
+        }
+
+        let mut music_body_ids = HashSet::new();
+        for zone in &self.music.zones {
+            if zone.body_id.trim().is_empty()
+                || zone.path.trim().is_empty()
+                || !music_body_ids.insert(zone.body_id.as_str())
+                || !ids.contains(zone.body_id.as_str())
+                || !zone.inner_distance.is_finite()
+                || zone.inner_distance < 0.0
+                || !zone.outer_distance.is_finite()
+                || zone.outer_distance <= zone.inner_distance
+                || !zone.volume.is_finite()
+                || !(0.0..=1.0).contains(&zone.volume)
+            {
+                return Err(format!(
+                    "[{}] Zona de música inválida para el cuerpo '{}'",
+                    p, zone.body_id
+                ));
+            }
+        }
+
+        if let Some(ref dyson) = self.dyson_sphere
+            && dyson.enabled
+        {
+            if !dyson.radius.is_finite() || dyson.radius <= 0.0 {
+                return Err(format!(
+                    "[{}] Radio de la Esfera de Dyson debe ser finito y mayor a 0",
+                    p
+                ));
+            }
+            if dyson.model_path.trim().is_empty() {
+                return Err(format!(
+                    "[{}] model_path de la Esfera de Dyson no puede estar vacío",
+                    p
+                ));
+            }
+            if !dyson.gravity_strength.is_finite() || dyson.gravity_strength < 0.0 {
+                return Err(format!(
+                    "[{}] Gravedad de la Esfera de Dyson debe ser finita y no negativa",
+                    p
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}

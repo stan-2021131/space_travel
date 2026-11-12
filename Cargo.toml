@@ -1,0 +1,17 @@
+[package]
+name = "space_travel"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "space_travel"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+raylib = "6.0"
+tobj = "4.0.5"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+rodio = { version = "=0.21.1", default-features = false, features = ["playback", "vorbis", "wav"] }

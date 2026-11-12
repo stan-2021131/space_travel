@@ -1,0 +1,403 @@
+[simulation]
+seed = 67
+time_scale = 1.0
+fixed_timestep = 0.0166667
+max_frame_delta = 0.1
+
+[music]
+enabled = true
+general_path = "assets/audio/music/General.ogg"
+master_volume = 0.70
+crossfade_seconds = 2.5
+general_min_volume = 0.15
+
+  [[music.zones]]
+  body_id = "Helios Tipo-II"
+  path = "assets/audio/music/Dyson_fixed.ogg"
+  inner_distance = 35.0
+  outer_distance = 70.0
+
+  [[music.zones]]
+  body_id = "Eden Replicado"
+  path = "assets/audio/music/Tierra_Planet.ogg"
+  inner_distance = 12.0
+  outer_distance = 55.0
+
+  [[music.zones]]
+  body_id = "Forja Basaltica"
+  path = "assets/audio/music/Rocky_Planet.ogg"
+  inner_distance = 12.0
+  outer_distance = 55.0
+
+  [[music.zones]]
+  body_id = "Cenotafio Cero"
+  path = "assets/audio/music/Destroyed_Planet_fixed.ogg"
+  inner_distance = 12.0
+  outer_distance = 55.0
+
+  [[music.zones]]
+  body_id = "Parque kirby"
+  path = "assets/audio/music/Kirby_Planet.ogg"
+  inner_distance = 15.0
+  outer_distance = 60.0
+
+  [[music.zones]]
+  body_id = "Anillo Glaseado"
+  path = "assets/audio/music/Donut_Planet.ogg"
+  inner_distance = 25.0
+  outer_distance = 85.0
+
+[ship]
+model_path = "assets/models/nave.obj"
+target_length_wu = 1.0
+initial_position = [0.0, 0.0, 200.0]
+initial_rotation_deg = [0.0, 180.0, 0.0]
+acceleration = 14.0
+reverse_acceleration = 7.0
+braking_force = 12.0
+drag = 0.7
+max_speed = 28.0
+yaw_speed = 1.8
+pitch_speed = 1.5
+roll_speed = 2.0
+collision_radius = 0.6
+boost_acceleration = 28.0
+boost_max_speed = 48.0
+boost_release_drag = 1.8
+boost_flame_multiplier = 1.65
+
+  [[ship.thruster_flames]]
+  position = [-4.12, 0.0, -3.45]
+  rotation_deg = [0.0, 0.0, 0.0]
+  radius = 0.22
+  length = 3.2
+  animation_speed = 8.0
+  idle_intensity = 0.32
+  active_intensity = 1.0
+
+  [[ship.thruster_flames]]
+  position = [4.12, 0.0, -3.45]
+  rotation_deg = [0.0, 0.0, 0.0]
+  radius = 0.22
+  length = 3.2
+  animation_speed = 8.7
+  idle_intensity = 0.32
+  active_intensity = 1.0
+
+[enemies]
+model_path = "assets/models/enemigos.obj"
+target_length_wu = 3.0
+model_yaw_offset_deg = -90.0
+initial_count = 3
+max_enemies = 12
+wave_increment = 2
+base_health = 100.0
+health_growth_per_wave = 0.20
+approaching_speed_ratio = 1.00
+supervising_speed_ratio = 0.30
+attacking_speed_ratio = 0.80
+steering_response = 2.5
+supervising_distance = 24.0
+preferred_distance = 16.0
+fire_range = 45.0
+enemy_fire_interval = 1.4
+enemy_projectile_speed = 32.0
+enemy_projectile_damage = 12.0
+player_fire_interval = 0.25
+player_projectile_speed = 55.0
+player_projectile_damage = 50.0
+projectile_lifetime = 4.0
+projectile_radius = 0.35
+collision_radius = 1.5
+player_collision_radius = 0.8
+player_max_health = 100.0
+spawn_behind_sun_clearance = 18.0
+spawn_spread = 8.0
+reinforcement_distance = 45.0
+wave_delay = 3.0
+peace_after_no_fire_seconds = 20.0
+player_respawn_delay = 3.0
+
+[camera]
+distance_behind = 3.5
+height_above = 1.2
+look_ahead = 6.0
+position_smoothing = 10.0
+rotation_smoothing = 8.0
+fov_deg = 50.0
+near_plane = 0.1
+far_plane = 950.0
+
+[sun]
+id = "Helios Tipo-II"
+model_path = "assets/models/sun/sun.obj"
+radius = 30.0
+collision_margin = 1.0
+rotation_period = 120.0
+shader = "plasma"
+gravity_strength = 20.0
+gravity_radius = 42.0
+visible_gravity = false
+damage_radius = 65.0
+max_damage_per_second = 30.0
+
+[dyson_sphere]
+enabled = true
+model_path = "assets/models/dyson/dyson.obj"
+radius = 60.0
+rotation_speed = 0.02
+collision_radius = 60.0
+gravity_radius = 72.0
+gravity_strength = 8.0
+
+[[planets]]
+id = "Eden Replicado"
+model_path = "assets/models/rocky/rocky.obj"
+radius = 16.0
+orbital_radius = 115.0
+orbital_period = 95.0
+rotation_period = 24.0
+initial_orbital_angle_deg = 85.0
+axial_tilt_deg = 23.5
+collision_margin = 1.0
+shader = "earth_like"
+gravity_strength = 12.0
+gravity_radius = 28.0
+visible_gravity = true
+
+  [[planets.surface_objects]]
+  name = "Roble"
+  model_path = "assets/models/objects/trees/Oak_Tree_Summer.obj"
+  count = 14
+  scale = 0.18
+  max_distance = 35.0
+  fade_range = 10.0
+
+  [[planets.surface_objects]]
+  name = "Pino"
+  model_path = "assets/models/objects/trees/Pine_Tree_2_Summer.obj"
+  count = 14
+  scale = 0.18
+  max_distance = 35.0
+  fade_range = 10.0
+
+  [[planets.surface_objects]]
+  name = "Casa"
+  model_path = "assets/models/objects/city/house.obj"
+  count = 8
+  scale = 0.22
+  max_distance = 35.0
+  fade_range = 10.0
+
+  [[planets.surface_objects]]
+  name = "Edificio"
+  model_path = "assets/models/objects/city/building.obj"
+  count = 6
+  scale = 0.18
+  max_distance = 35.0
+  fade_range = 10.0
+
+  [[planets.surface_objects]]
+  name = "Fabrica"
+  model_path = "assets/models/objects/city/factory.obj"
+  count = 6
+  scale = 0.20
+  max_distance = 35.0
+  fade_range = 10.0
+
+[[planets]]
+id = "Forja Basaltica"
+model_path = "assets/models/rocky/rocky.obj"
+radius = 15.0
+orbital_radius = 160.0
+orbital_period = 140.0
+rotation_period = 15.0
+initial_orbital_angle_deg = 0.0
+collision_margin = 1.0
+shader = "normal_mapped"
+gravity_strength = 13.0
+gravity_radius = 30.0
+visible_gravity = true
+
+  [[planets.surface_objects]]
+  name = "Montana"
+  model_path = "assets/models/objects/mountain/Mountain_1_LOD_High.obj"
+  count = 6
+  scale = 0.055
+  max_distance = 80.0
+  fade_range = 25.0
+
+[[planets]]
+id = "Cenotafio Cero"
+model_path = "assets/models/destroyed/PlanetaDestruido.obj"
+radius = 12.0
+orbital_radius = 235.0
+orbital_period = 210.0
+rotation_period = 28.0
+initial_orbital_angle_deg = 215.0
+collision_margin = 1.0
+shader = "normal_mapped"
+gravity_strength = 14.0
+gravity_radius = 28.0
+visible_gravity = true
+
+  [[planets.debris_rings]]
+  model_paths = [
+    "assets/models/objects/escombro1/escombro1.obj",
+    "assets/models/objects/escombro2/escombro2.obj",
+  ]
+  count = 20
+  inner_radius = 17.0
+  outer_radius = 22.0
+  tilt_deg = 18.0
+  rotation_period = 42.0
+  min_scale = 0.65
+  max_scale = 1.25
+  height_variation = 1.2
+  min_spin_period = 5.0
+  max_spin_period = 12.0
+  collision_margin = 0.15
+
+[[planets]]
+id = "Asteroide 67"
+mesh_type = "icosphere"
+model_path = ""
+subdivisions = 2
+radius = 3.0
+deformation_amplitude = 1.2
+deformation_frequency = 0.5
+orbital_radius = 310.0
+orbital_period = 280.0
+rotation_period = 25.0
+initial_orbital_angle_deg = 110.0
+collision_margin = 1.0
+shader = "procedural_rock"
+gravity_strength = 6.0
+gravity_radius = 12.0
+visible_gravity = false
+
+[[planets]]
+id = "Parque kirby"
+model_path = "assets/models/kirby_planet/platform/platformobj.obj"
+radius = 10.0
+orbital_radius = 205.0
+orbital_period = 210.0
+rotation_period = 42.0
+initial_orbital_angle_deg = 300.0
+collision_margin = 3.5
+shader = "normal_mapped"
+gravity_strength = 8.0
+gravity_radius = 25.0
+visible_gravity = true
+
+  [[planets.components]]
+  name = "Propulsor"
+  model_path = "assets/models/kirby_planet/thruster/thruster.obj"
+
+  [[planets.components]]
+  name = "Cuerpo y brazos"
+  model_path = "assets/models/kirby_planet/kirby_body/kirby_body.obj"
+
+  [[planets.components]]
+  name = "Pies"
+  model_path = "assets/models/kirby_planet/kirby_feet/feet.obj"
+
+  [[planets.components]]
+  name = "Ojos"
+  model_path = "assets/models/kirby_planet/kirby_eyes/eyes.obj"
+
+  [[planets.components]]
+  name = "Boca"
+  model_path = "assets/models/kirby_planet/kirby_mouth/mouth.obj"
+
+  [[planets.components]]
+  name = "Montaña rusa colgante"
+  model_path = "assets/models/objects/roller_coaster/roller_coaster.obj"
+
+  [[planets.components]]
+  name = "Tren de montaña rusa"
+  model_path = "assets/models/objects/coaster_train/coaster_train.obj"
+  local_rotation_period = 14.0
+  initial_local_rotation_deg = 0.0
+
+  [[planets.thruster_flames]]
+  position = [0.0, -2.52, 0.0]
+  rotation_deg = [-90.0, 0.0, 0.0]
+  radius = 0.85
+  length = 3.2
+  animation_speed = 4.5
+  idle_intensity = 1.0
+  active_intensity = 1.0
+
+  [[planets.moons]]
+  name = "Estrella"
+  model_path = "assets/models/kirby_planet/star_moon/Star_Moon.obj"
+  radius = 3.2
+  orbital_radius = 22.0
+  orbital_period = 36.0
+  rotation_period = 8.0
+  initial_orbital_angle_deg = 45.0
+  orbit_tilt_deg = 25.0
+  collision_margin = 0.3
+
+[[planets]]
+id = "Anillo Glaseado"
+model_path = "assets/models/donut/donut_8.obj"
+radius = 45.0
+orbital_radius = 450.0
+orbital_period = 420.0
+rotation_period = 35.0
+initial_orbital_angle_deg = 200.0
+axial_tilt_deg = 30.0
+collision_margin = 1.0
+shader = "texture"
+gravity_strength = 13.0
+gravity_radius = 85.0
+visible_gravity = true
+
+  [[planets.surface_objects]]
+  name = "Pastel"
+  model_path = "assets/models/objects/cake/cake_slice.obj"
+  count = 8
+  scale = 12.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Galleta"
+  model_path = "assets/models/objects/cookie/cookie.obj"
+  count = 8
+  scale = 14.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Helado"
+  model_path = "assets/models/objects/ice_cream/ice_cream_cone.obj"
+  count = 8
+  scale = 8.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+  [[planets.surface_objects]]
+  name = "Paleta"
+  model_path = "assets/models/objects/lollipop/lollipop.obj"
+  count = 8
+  scale = 8.0
+  max_distance = 120.0
+  fade_range = 40.0
+
+[[planets]]
+id = "Homero"
+parent_id = "Anillo Glaseado"
+model_path = "assets/models/homer/homero.obj"
+radius = 8.0
+orbital_radius = 80.0
+orbital_period = 45.0
+rotation_period = 20.0
+initial_orbital_angle_deg = 45.0
+collision_margin = 1.0
+shader = "diffuse"
+gravity_strength = 5.0
+gravity_radius = 16.0
+visible_gravity = false
