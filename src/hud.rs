@@ -221,6 +221,9 @@ fn get_glyph_rows(c: char) -> [u8; 7] {
         '=' => [
             0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
         ],
+        '_' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111,
+        ],
         _ => [0b00000; 7],
     }
 }
@@ -344,10 +347,10 @@ pub struct HudContext<'a> {
 /// Dibuja el marco angular superior que muestra el estado de alerta o el modo de los enemigos.
 pub fn draw_top_mode_banner(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) {
     let screen_w = framebuffer.width as i32;
-    let banner_w = 640;
-    let banner_h = 30;
+    let banner_w = 680.min(screen_w - 24);
+    let banner_h = 36;
     let left = (screen_w - banner_w) / 2;
-    let top = 14;
+    let top = 12;
 
     // Colores según el estado de alerta de la IA enemiga
     let (border_col, bg_col, text_col, title, subtitle) = if !ctx.player_alive {
@@ -401,19 +404,31 @@ pub fn draw_top_mode_banner(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>)
 
     // Título y subtítulo en CPU centrados exactamente
     let banner_text = format!("{}: {}", title, subtitle);
-    let text_w = measure_text_width(&banner_text, 1);
+    let text_scale = if measure_text_width(&banner_text, 2) <= banner_w - 16 {
+        2
+    } else {
+        1
+    };
+    let text_w = measure_text_width(&banner_text, text_scale);
     let text_x = left + (banner_w - text_w) / 2;
-    let text_y = top + (banner_h - 7) / 2;
-    draw_text(framebuffer, text_x, text_y, &banner_text, text_col, 1);
+    let text_y = top + (banner_h - 7 * text_scale) / 2;
+    draw_text(
+        framebuffer,
+        text_x,
+        text_y,
+        &banner_text,
+        text_col,
+        text_scale,
+    );
 }
 
 /// Dibuja la barra de vida estilizada en la esquina inferior izquierda.
 pub fn draw_player_health_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) {
     let screen_h = framebuffer.height as i32;
-    let left = 24;
-    let bottom = screen_h - 26;
-    let bar_w = 260;
-    let bar_h = 20;
+    let left = 20;
+    let bottom = screen_h - 22;
+    let bar_w = 240;
+    let bar_h = 24;
     let top = bottom - bar_h;
 
     let fraction = (ctx.player_health / ctx.player_max_health.max(1e-4)).clamp(0.0, 1.0);
@@ -426,20 +441,25 @@ pub fn draw_player_health_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<
         Color::rgb(240, 50, 45) // Rojo crítico
     };
 
-    let panel_bg_w = bar_w + 95;
-    let panel_bg_h = bar_h + 28;
+    let hp_text = format!(
+        "{}/{} HP",
+        ctx.player_health as i32, ctx.player_max_health as i32
+    );
+    let hp_w = measure_text_width(&hp_text, 2);
+    let panel_bg_w = bar_w + 16 + hp_w + 12;
+    let panel_bg_h = bar_h + 36;
 
     // Fondo sci-fi biselado
     framebuffer.fill_rect(
-        left - 4,
-        top - 22,
+        left - 6,
+        top - 28,
         panel_bg_w,
         panel_bg_h,
         Color::rgb(18, 24, 35),
     );
     framebuffer.fill_rect(
-        left - 3,
-        top - 21,
+        left - 5,
+        top - 27,
         panel_bg_w - 2,
         panel_bg_h - 2,
         Color::rgb(8, 12, 18),
@@ -449,10 +469,10 @@ pub fn draw_player_health_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<
     draw_text(
         framebuffer,
         left + 2,
-        top - 16,
+        top - 22,
         "INTEGRIDAD DEL CASCO",
         Color::rgb(150, 185, 220),
-        1,
+        2,
     );
 
     // Contorno de la barra
@@ -472,17 +492,13 @@ pub fn draw_player_health_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<
     }
 
     // Texto numérico 100/100 HP
-    let hp_text = format!(
-        "{}/{} HP",
-        ctx.player_health as i32, ctx.player_max_health as i32
-    );
     draw_text(
         framebuffer,
-        left + bar_w + 8,
-        top + 6,
+        left + bar_w + 12,
+        top + 5,
         &hp_text,
         health_col,
-        1,
+        2,
     );
 }
 
@@ -491,9 +507,9 @@ pub fn draw_curved_speedometer(framebuffer: &mut Framebuffer, ctx: &HudContext<'
     let screen_w = framebuffer.width as i32;
     let screen_h = framebuffer.height as i32;
 
-    let center_x = screen_w - 35;
-    let center_y = screen_h - 32;
-    let radius = 140.0_f32;
+    let center_x = screen_w - 32;
+    let center_y = screen_h - 28;
+    let radius = 165.0_f32;
     let fraction = (ctx.ship_speed_wu / ctx.ship_max_speed_wu.max(1e-4)).clamp(0.0, 1.0);
 
     // Ángulo desde 180° (izquierda) hasta 90° (arriba): cuadrante curvo
@@ -537,15 +553,29 @@ pub fn draw_curved_speedometer(framebuffer: &mut Framebuffer, ctx: &HudContext<'
     // 3. Lectura numérica de velocidad
     let kmh = (ctx.ship_speed_wu * 14.5).round() as i32;
     let speed_text = format!("{} KM/H", kmh);
-    let speed_text_w = measure_text_width(&speed_text, 2);
-    let label_w = measure_text_width("VELOCIDAD", 1);
 
-    // Anclado a la derecha dentro del cuadrante, con espacio amplio respecto al arco para que 3 dígitos nunca se solapen
-    let right_anchor = center_x - 15;
+    // Anclado a la derecha dentro del cuadrante; reduce escala a 2 si alcanza 4 dígitos para no tocar el arco
+    let right_anchor = center_x - 14;
+    let speed_y = center_y - 34;
+    let arc_dy = (center_y - speed_y) as f32;
+    let arc_dx = (radius * radius - arc_dy * arc_dy).max(0.0).sqrt();
+    let max_speed_text_w = ((right_anchor as f32) - (center_x as f32 - arc_dx + 6.0)) as i32;
+    let speed_scale = if measure_text_width(&speed_text, 3) <= max_speed_text_w {
+        3
+    } else {
+        2
+    };
+    let speed_text_w = measure_text_width(&speed_text, speed_scale);
+    let speed_text_y = if speed_scale == 3 {
+        speed_y
+    } else {
+        speed_y + 4
+    };
+    let label_w = measure_text_width("VELOCIDAD", 2);
+
     let speed_x = right_anchor - speed_text_w;
-    let speed_y = center_y - 30;
     let label_x = right_anchor - label_w;
-    let label_y = speed_y - 14;
+    let label_y = speed_y - 20;
 
     draw_text(
         framebuffer,
@@ -553,35 +583,35 @@ pub fn draw_curved_speedometer(framebuffer: &mut Framebuffer, ctx: &HudContext<'
         label_y,
         "VELOCIDAD",
         Color::rgb(140, 180, 220),
-        1,
+        2,
     );
     draw_text(
         framebuffer,
         speed_x,
-        speed_y,
+        speed_text_y,
         &speed_text,
         Color::rgb(60, 235, 140),
-        2,
+        speed_scale,
     );
 }
 
 /// Dibuja el panel lateral izquierdo con los controles de vuelo (plegable con [H]).
 pub fn draw_controls_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) {
-    let left = 20;
-    let top = 50;
-    let panel_w = 245;
-    let panel_h = 195;
+    let left = 18;
+    let top = 60;
+    let panel_w = 390;
+    let panel_h = 268;
 
     if !ctx.show_controls {
         // Pestaña mínima de recordatorio cuando está oculto
-        framebuffer.fill_rect(left, top, 140, 18, Color::rgb(20, 30, 44));
+        framebuffer.fill_rect(left, top, 216, 28, Color::rgb(20, 30, 44));
         draw_text(
             framebuffer,
-            left + 6,
-            top + 5,
+            left + 10,
+            top + 7,
             "[H] VER CONTROLES",
             Color::rgb(110, 160, 210),
-            1,
+            2,
         );
         return;
     }
@@ -597,14 +627,14 @@ pub fn draw_controls_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) 
     );
 
     // Cabecera
-    framebuffer.fill_rect(left + 2, top + 2, panel_w - 4, 18, Color::rgb(20, 34, 52));
+    framebuffer.fill_rect(left + 2, top + 2, panel_w - 4, 28, Color::rgb(20, 34, 52));
     draw_text(
         framebuffer,
-        left + 8,
-        top + 6,
+        left + 12,
+        top + 9,
         "CONTROLES DE VUELO [H]",
         Color::rgb(70, 215, 255),
-        1,
+        2,
     );
 
     let rows = [
@@ -619,25 +649,25 @@ pub fn draw_controls_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) 
         ("R", "Reiniciar posicion"),
     ];
 
-    let mut row_y = top + 26;
+    let mut row_y = top + 36;
     for (key, desc) in rows {
         draw_text(
             framebuffer,
-            left + 8,
+            left + 12,
             row_y,
             key,
             Color::rgb(245, 205, 75),
-            1,
+            2,
         );
         draw_text(
             framebuffer,
-            left + 80,
+            left + 132,
             row_y,
             desc,
             Color::rgb(180, 200, 220),
-            1,
+            2,
         );
-        row_y += 18;
+        row_y += 25;
     }
 }
 
@@ -648,10 +678,10 @@ pub fn draw_stats_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) {
     }
 
     let screen_w = framebuffer.width as i32;
-    let panel_w = 250;
-    let panel_h = 275;
-    let left = screen_w - panel_w - 20;
-    let top = 50;
+    let panel_w = 376;
+    let panel_h = 330;
+    let left = screen_w - panel_w - 18;
+    let top = 60;
 
     // Fondo translúcido con marco biselado
     framebuffer.fill_rect(left, top, panel_w, panel_h, Color::rgb(42, 60, 85));
@@ -664,14 +694,14 @@ pub fn draw_stats_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) {
     );
 
     // Cabecera
-    framebuffer.fill_rect(left + 2, top + 2, panel_w - 4, 18, Color::rgb(22, 38, 58));
+    framebuffer.fill_rect(left + 2, top + 2, panel_w - 4, 28, Color::rgb(22, 38, 58));
     draw_text(
         framebuffer,
-        left + 8,
-        top + 6,
+        left + 12,
+        top + 9,
         "STATS DETALLADOS [F3]",
         Color::rgb(80, 230, 255),
-        1,
+        2,
     );
 
     let shader_str = match ctx.shader_mode {
@@ -702,40 +732,40 @@ pub fn draw_stats_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) {
         ),
     ];
 
-    let mut row_y = top + 26;
+    let mut row_y = top + 36;
     for (label, val) in &stat_rows {
         draw_text(
             framebuffer,
-            left + 8,
+            left + 12,
             row_y,
             label,
             Color::rgb(160, 190, 220),
-            1,
+            2,
         );
         draw_text(
             framebuffer,
-            left + 130,
+            left + 208,
             row_y,
             val,
             Color::rgb(75, 240, 140),
-            1,
+            2,
         );
-        row_y += 16;
+        row_y += 21;
     }
 
     // Sección Modo Dev / Opciones
     row_y += 4;
-    framebuffer.fill_rect(left + 6, row_y, panel_w - 12, 1, Color::rgb(45, 65, 90));
-    row_y += 6;
+    framebuffer.fill_rect(left + 8, row_y, panel_w - 16, 1, Color::rgb(45, 65, 90));
+    row_y += 8;
     draw_text(
         framebuffer,
-        left + 8,
+        left + 12,
         row_y,
         "OPCIONES MODO DEV",
         Color::rgb(240, 195, 60),
-        1,
+        2,
     );
-    row_y += 18;
+    row_y += 22;
 
     let dev_rows = [
         ("[F2] SHADER", shader_str.to_string()),
@@ -790,21 +820,21 @@ pub fn draw_stats_panel(framebuffer: &mut Framebuffer, ctx: &HudContext<'_>) {
     for (action, state) in &dev_rows {
         draw_text(
             framebuffer,
-            left + 8,
+            left + 12,
             row_y,
             action,
             Color::rgb(245, 215, 85),
-            1,
+            2,
         );
         draw_text(
             framebuffer,
-            left + 130,
+            left + 208,
             row_y,
             state,
             Color::rgb(90, 225, 255),
-            1,
+            2,
         );
-        row_y += 16;
+        row_y += 21;
     }
 }
 
@@ -1058,24 +1088,28 @@ pub fn draw_planet_markers(framebuffer: &mut Framebuffer, markers: &[PlanetMarke
 
         // Si está en rango cercano, muestra nombre y distancia encima de la flecha
         if marker.is_near {
+            let screen_w = framebuffer.width as i32;
             let name_dist = format!(
                 "{} [{:.0} WU]",
                 marker.id.to_uppercase(),
                 marker.distance_wu
             );
-            let name_w = measure_text_width(&name_dist, 1);
-            let name_x = tip_x - name_w / 2;
-            let name_y = top_y - 10;
+            let name_w = measure_text_width(&name_dist, 2);
+            let name_pill_w = name_w + 10;
+            let name_pill_x =
+                (tip_x - name_pill_w / 2).clamp(4, (screen_w - name_pill_w - 4).max(4));
+            let name_x = name_pill_x + 5;
+            let name_y = top_y - 19;
 
             // Pequeña pastilla de fondo para legibilidad contra estrellas
             framebuffer.fill_rect(
-                name_x - 3,
-                name_y - 2,
-                name_w + 6,
-                11,
+                name_pill_x,
+                name_y - 3,
+                name_pill_w,
+                20,
                 Color::rgb(10, 15, 22),
             );
-            draw_text(framebuffer, name_x, name_y, &name_dist, text_col, 1);
+            draw_text(framebuffer, name_x, name_y, &name_dist, text_col, 2);
 
             // Si además está en rango de interacción para vista panorámica [C]
             if marker.in_interaction_range {
@@ -1084,15 +1118,18 @@ pub fn draw_planet_markers(framebuffer: &mut Framebuffer, markers: &[PlanetMarke
                 } else {
                     "[C] VISTA PANORAMICA"
                 };
-                let hint_w = measure_text_width(hint, 1);
-                let hint_x = tip_x - hint_w / 2;
-                let hint_y = name_y - 12;
+                let hint_w = measure_text_width(hint, 2);
+                let hint_pill_w = hint_w + 10;
+                let hint_pill_x =
+                    (tip_x - hint_pill_w / 2).clamp(4, (screen_w - hint_pill_w - 4).max(4));
+                let hint_x = hint_pill_x + 5;
+                let hint_y = name_y - 22;
 
                 framebuffer.fill_rect(
-                    hint_x - 3,
-                    hint_y - 2,
-                    hint_w + 6,
-                    11,
+                    hint_pill_x,
+                    hint_y - 3,
+                    hint_pill_w,
+                    20,
                     Color::rgb(15, 30, 45),
                 );
                 draw_text(
@@ -1101,7 +1138,7 @@ pub fn draw_planet_markers(framebuffer: &mut Framebuffer, markers: &[PlanetMarke
                     hint_y,
                     hint,
                     Color::rgb(60, 245, 255),
-                    1,
+                    2,
                 );
             }
         }
@@ -1177,6 +1214,17 @@ pub fn draw_rect_outline(fb: &mut Framebuffer, x: i32, y: i32, w: i32, h: i32, c
     fb.fill_rect(x + w - 1, y, 1, h, color);
 }
 
+/// Escala de fuente usada por el cuadro de diálogo de historia (`StoryBox`).
+pub const STORY_BOX_FONT_SCALE: i32 = 2;
+/// Cantidad máxima de líneas de texto por página en `StoryBox`.
+pub const STORY_BOX_MAX_LINES: usize = 4;
+
+/// Calcula el ancho útil en píxeles para envolver texto dentro de `StoryBox`.
+#[inline]
+pub fn story_box_text_width(viewport_width: i32) -> i32 {
+    1140.min(viewport_width - 44) - 44
+}
+
 /// Dibuja el panel lateral derecho con las características astronómicas del cuerpo celeste.
 pub fn draw_general_data_panel(
     framebuffer: &mut Framebuffer,
@@ -1201,7 +1249,7 @@ pub fn draw_general_data_panel(
     );
 
     // 3. Encabezado de la tarjeta "DATOS GENERALES"
-    let header_h = 24;
+    let header_h = 30;
     framebuffer.fill_rect(x, y, width, header_h, Color::rgb(22, 45, 95));
     draw_rect_outline(framebuffer, x, y, width, header_h, Color::rgb(65, 125, 230));
     draw_text(
@@ -1210,22 +1258,22 @@ pub fn draw_general_data_panel(
         y + 8,
         "DATOS GENERALES",
         Color::rgb(170, 225, 255),
-        1,
+        2,
     );
 
-    // 4. Filas telemétricas
+    // 4. Filas telemétricas a escala legible
     let mut cur_y = y + header_h + 14;
-    let row_spacing = 20;
+    let row_spacing = 26;
     let label_x = x + 14;
-    let value_x = x + 125;
+    let value_x = x + 132;
 
     let mut draw_row = |fb: &mut Framebuffer, label: &str, val: &str| {
-        draw_text(fb, label_x, cur_y, label, Color::rgb(125, 155, 195), 1);
-        draw_text(fb, value_x, cur_y, val, Color::rgb(235, 245, 255), 1);
+        draw_text(fb, label_x, cur_y, label, Color::rgb(125, 155, 195), 2);
+        draw_text(fb, value_x, cur_y, val, Color::rgb(235, 245, 255), 2);
         cur_y += row_spacing;
     };
 
-    draw_row(framebuffer, "ID / NOMBRE:", data.id);
+    draw_row(framebuffer, "ID:", data.id);
     draw_row(framebuffer, "TIPO:", data.body_type);
 
     let radius_str = format!("{:.1} WU", data.radius_wu);
@@ -1235,7 +1283,7 @@ pub fn draw_general_data_panel(
         Some(p) => format!("{:.1} S", p),
         None => "N/A (CENTRO)".to_string(),
     };
-    draw_row(framebuffer, "PERIODO ORB:", &orbit_str);
+    draw_row(framebuffer, "ORBITA:", &orbit_str);
 
     let rot_str = format!("{:.1} S", data.rotation_period_s);
     draw_row(framebuffer, "ROTACION:", &rot_str);
@@ -1251,18 +1299,18 @@ pub fn draw_general_data_panel(
     draw_row(framebuffer, "GRAVEDAD:", &grav_str);
 
     if let Some(ref obj_str) = data.surface_objects_summary {
-        draw_row(framebuffer, "SUPERFICIE:", obj_str);
+        draw_row(framebuffer, "OBJETOS:", obj_str);
     }
 
     if let Some(ref moons_str) = data.moons_summary {
-        draw_row(framebuffer, "SATELITES:", moons_str);
+        draw_row(framebuffer, "LUNAS:", moons_str);
     }
 
     if let Some(ref rings_str) = data.rings_summary {
         draw_row(framebuffer, "ANILLOS:", rings_str);
     }
 
-    draw_row(framebuffer, "SHADER CPU:", data.shader_name);
+    draw_row(framebuffer, "SHADER:", data.shader_name);
 }
 
 /// Propiedades de configuración y contenido para el componente de cuadro de diálogo StoryBox.
@@ -1296,10 +1344,12 @@ pub fn draw_story_dialog_box(framebuffer: &mut Framebuffer, props: &StoryBoxProp
 
     if !is_open {
         // Barra discreta de reapertura y navegación en la parte inferior cuando está cerrado
-        let bar_width = 460.min(width);
+        let prompt = "[C] SALIR | [ENTER] REABRIR REGISTRO";
+        let prompt_w = measure_text_width(prompt, 2);
+        let bar_width = (prompt_w + 28).min(width);
         let bar_x = x + (width - bar_width) / 2;
-        let bar_y = y + height - 28;
-        let bar_height = 24;
+        let bar_y = y + height - 36;
+        let bar_height = 32;
 
         framebuffer.fill_rect(bar_x, bar_y, bar_width, bar_height, Color::rgb(12, 18, 30));
         draw_rect_outline(
@@ -1311,11 +1361,9 @@ pub fn draw_story_dialog_box(framebuffer: &mut Framebuffer, props: &StoryBoxProp
             Color::rgb(45, 80, 140),
         );
 
-        let prompt = "[C] SALIR DE VISTA | [ENTER] REABRIR REGISTRO";
-        let prompt_w = measure_text_width(prompt, 1);
         let tx = bar_x + (bar_width - prompt_w) / 2;
-        let ty = bar_y + (bar_height - 7) / 2;
-        draw_text(framebuffer, tx, ty, prompt, Color::rgb(140, 195, 245), 1);
+        let ty = bar_y + (bar_height - 14) / 2;
+        draw_text(framebuffer, tx, ty, prompt, Color::rgb(140, 195, 245), 2);
         return;
     }
 
@@ -1333,40 +1381,41 @@ pub fn draw_story_dialog_box(framebuffer: &mut Framebuffer, props: &StoryBoxProp
         Color::rgb(18, 32, 60),
     );
 
-    // 3. Pestaña superior izquierda (Header Tab)
-    let tab_w = 270.min(width - 20);
-    let tab_h = 22;
-    framebuffer.fill_rect(x, y, tab_w, tab_h, Color::rgb(22, 45, 95));
-    draw_rect_outline(framebuffer, x, y, tab_w, tab_h, Color::rgb(65, 125, 230));
-    draw_text(
-        framebuffer,
-        x + 12,
-        y + 7,
-        tab_title,
-        Color::rgb(160, 220, 255),
-        1,
-    );
-
-    // Indicador de página en la esquina derecha del tab
+    // 3. Pestaña superior izquierda (Header Tab) adaptada al título a escala 2
     let page_indicator = format!(
         "{}/{}",
         (current_page_idx + 1).min(total_pages),
         total_pages
     );
-    let p_w = measure_text_width(&page_indicator, 1);
+    let p_w = measure_text_width(&page_indicator, 2);
+    let title_w = measure_text_width(tab_title, 2);
+    let tab_w = (title_w + p_w + 48).min(width - 20);
+    let tab_h = 30;
+    framebuffer.fill_rect(x, y, tab_w, tab_h, Color::rgb(22, 45, 95));
+    draw_rect_outline(framebuffer, x, y, tab_w, tab_h, Color::rgb(65, 125, 230));
     draw_text(
         framebuffer,
-        x + tab_w - p_w - 10,
-        y + 7,
-        &page_indicator,
-        Color::rgb(255, 220, 100),
-        1,
+        x + 14,
+        y + 8,
+        tab_title,
+        Color::rgb(160, 220, 255),
+        2,
     );
 
-    // 4. Texto de la bitácora / historia
-    let text_start_x = x + 20;
-    let mut text_y = y + tab_h + 12;
-    let line_height = 15;
+    // Indicador de página en la esquina derecha del tab
+    draw_text(
+        framebuffer,
+        x + tab_w - p_w - 14,
+        y + 8,
+        &page_indicator,
+        Color::rgb(255, 220, 100),
+        2,
+    );
+
+    // 4. Texto de la bitácora / historia a escala 2
+    let text_start_x = x + 22;
+    let mut text_y = y + tab_h + 14;
+    let line_height = 24;
 
     for line in lines {
         draw_text(
@@ -1375,7 +1424,7 @@ pub fn draw_story_dialog_box(framebuffer: &mut Framebuffer, props: &StoryBoxProp
             text_y,
             line,
             Color::rgb(225, 240, 255),
-            1,
+            STORY_BOX_FONT_SCALE,
         );
         text_y += line_height;
     }
@@ -1383,29 +1432,29 @@ pub fn draw_story_dialog_box(framebuffer: &mut Framebuffer, props: &StoryBoxProp
     // 5. Botón / Instrucción en la esquina inferior derecha
     let is_last_page = current_page_idx + 1 >= total_pages;
     let (action_label, action_color) = if is_last_page {
-        ("[ENTER] CERRAR REGISTRO [X]", Color::rgb(255, 190, 70))
+        ("[ENTER] CERRAR [X]", Color::rgb(255, 190, 70))
     } else {
-        ("[ENTER] SIGUIENTE PAGINA [>]", Color::rgb(70, 230, 180))
+        ("[ENTER] SIGUIENTE [>]", Color::rgb(70, 230, 180))
     };
 
-    let action_w = measure_text_width(action_label, 1);
-    let action_x = x + width - action_w - 20;
-    let action_y = y + height - 20;
+    let action_w = measure_text_width(action_label, 2);
+    let action_x = x + width - action_w - 22;
+    let action_y = y + height - 28;
 
-    // Pequeño marco de realce para el botón de acción
+    // Marco de realce para el botón de acción
     framebuffer.fill_rect(
-        action_x - 6,
-        action_y - 3,
-        action_w + 12,
-        14,
+        action_x - 8,
+        action_y - 4,
+        action_w + 16,
+        22,
         Color::rgb(18, 30, 55),
     );
     draw_rect_outline(
         framebuffer,
-        action_x - 6,
-        action_y - 3,
-        action_w + 12,
-        14,
+        action_x - 8,
+        action_y - 4,
+        action_w + 16,
+        22,
         action_color,
     );
     draw_text(
@@ -1414,7 +1463,7 @@ pub fn draw_story_dialog_box(framebuffer: &mut Framebuffer, props: &StoryBoxProp
         action_y,
         action_label,
         action_color,
-        1,
+        2,
     );
 
     // Instrucción para salir con [C] en la esquina inferior izquierda
@@ -1422,9 +1471,9 @@ pub fn draw_story_dialog_box(framebuffer: &mut Framebuffer, props: &StoryBoxProp
         framebuffer,
         text_start_x,
         action_y,
-        "[C] SALIR DE VISTA PANORAMICA",
+        "[C] SALIR DE VISTA",
         Color::rgb(120, 145, 175),
-        1,
+        2,
     );
 }
 
@@ -1436,20 +1485,25 @@ pub fn draw_planet_inspection_hud(
     let width = framebuffer.width as i32;
     let height = framebuffer.height as i32;
 
-    // 1. Título superior central con escala 2 y color dorado
-    let title_w = measure_text_width(data.title, 2);
+    // 1. Título superior central con escala 3 si cabe cómodamente, o escala 2 en títulos largos
+    let title_scale = if measure_text_width(data.title, 3) <= width - 160 {
+        3
+    } else {
+        2
+    };
+    let title_w = measure_text_width(data.title, title_scale);
     let title_x = (width - title_w) / 2;
-    let title_y = 26;
+    let title_y = 18;
 
     // Decoración de acento alrededor del título
     let bracket_pad = 16;
     draw_text(
         framebuffer,
-        title_x - bracket_pad - 12,
+        title_x - bracket_pad - 6 * title_scale,
         title_y,
         "[",
         Color::rgb(100, 180, 255),
-        2,
+        title_scale,
     );
     draw_text(
         framebuffer,
@@ -1457,7 +1511,7 @@ pub fn draw_planet_inspection_hud(
         title_y,
         "]",
         Color::rgb(100, 180, 255),
-        2,
+        title_scale,
     );
     draw_text(
         framebuffer,
@@ -1465,37 +1519,46 @@ pub fn draw_planet_inspection_hud(
         title_y,
         data.title,
         Color::rgb(255, 225, 75),
-        2,
+        title_scale,
     );
 
-    // Subtítulo pequeño debajo del título
+    // Subtítulo debajo del título
     let sub_text = "SECTOR ORBITAL // REGISTRO TELEMETRICO";
-    let sub_w = measure_text_width(sub_text, 1);
+    let sub_w = measure_text_width(sub_text, 2);
     draw_text(
         framebuffer,
         (width - sub_w) / 2,
-        title_y + 20,
+        title_y + 7 * title_scale + 6,
         sub_text,
         Color::rgb(120, 160, 200),
-        1,
+        2,
     );
 
-    // 2. Panel derecho de "DATOS GENERALES"
-    let panel_w = 340;
-    let panel_h = 240;
-    let panel_x = width - panel_w - 28;
-    let panel_y = 65;
+    // 2. Panel derecho de "DATOS GENERALES" posicionado debajo del encabezado para evitar choques
+    let row_count = 7
+        + usize::from(data.surface_objects_summary.is_some())
+        + usize::from(data.moons_summary.is_some())
+        + usize::from(data.rings_summary.is_some());
+    let panel_w = 405.min(width - 40);
+    let panel_h = 30 + 14 + (row_count as i32) * 26 + 8;
+    let panel_x = width - panel_w - 24;
+    let panel_y = 74;
     draw_general_data_panel(framebuffer, panel_x, panel_y, panel_w, panel_h, data);
 
     // 3. Cuadro inferior de historia / bitácora (StoryBox)
-    let story_w = 980.min(width - 56);
-    let story_h = 135;
+    let story_w = 1140.min(width - 44);
+    let story_h = 186;
     let story_x = (width - story_w) / 2;
-    let story_y = height - story_h - 24;
+    let story_y = height - story_h - 20;
 
-    // Paginación y envoltura de texto
-    let max_text_width = story_w - 40;
-    let paginated = paginate_lore(data.lore_pages, max_text_width, 4, 1);
+    // Paginación y envoltura de texto compartida con App
+    let max_text_width = story_box_text_width(width);
+    let paginated = paginate_lore(
+        data.lore_pages,
+        max_text_width,
+        STORY_BOX_MAX_LINES,
+        STORY_BOX_FONT_SCALE,
+    );
     let total_pages = paginated.len().max(1);
     let current_idx = data.current_page.min(total_pages - 1);
     let current_lines = if !paginated.is_empty() {

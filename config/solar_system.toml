@@ -12,37 +12,37 @@ crossfade_seconds = 2.5
 general_min_volume = 0.15
 
   [[music.zones]]
-  body_id = "sol"
+  body_id = "Helios Tipo-II"
   path = "assets/audio/music/Dyson_fixed.ogg"
   inner_distance = 35.0
   outer_distance = 70.0
 
   [[music.zones]]
-  body_id = "tierra"
+  body_id = "Eden Replicado"
   path = "assets/audio/music/Tierra_Planet.ogg"
   inner_distance = 12.0
   outer_distance = 55.0
 
   [[music.zones]]
-  body_id = "rocoso"
+  body_id = "Forja Basaltica"
   path = "assets/audio/music/Rocky_Planet.ogg"
   inner_distance = 12.0
   outer_distance = 55.0
 
   [[music.zones]]
-  body_id = "destruido"
+  body_id = "Cenotafio Cero"
   path = "assets/audio/music/Destroyed_Planet_fixed.ogg"
   inner_distance = 12.0
   outer_distance = 55.0
 
   [[music.zones]]
-  body_id = "kirby"
+  body_id = "Parque kirby"
   path = "assets/audio/music/Kirby_Planet.ogg"
   inner_distance = 15.0
   outer_distance = 60.0
 
   [[music.zones]]
-  body_id = "dona"
+  body_id = "Anillo Glaseado"
   path = "assets/audio/music/Donut_Planet.ogg"
   inner_distance = 25.0
   outer_distance = 85.0
@@ -129,7 +129,7 @@ near_plane = 0.1
 far_plane = 950.0
 
 [sun]
-id = "sol"
+id = "Helios Tipo-II"
 model_path = "assets/models/sun/sun.obj"
 radius = 30.0
 collision_margin = 1.0
@@ -151,7 +151,7 @@ gravity_radius = 72.0
 gravity_strength = 8.0
 
 [[planets]]
-id = "tierra"
+id = "Eden Replicado"
 model_path = "assets/models/rocky/rocky.obj"
 radius = 16.0
 orbital_radius = 115.0
@@ -206,7 +206,7 @@ visible_gravity = true
   fade_range = 10.0
 
 [[planets]]
-id = "rocoso"
+id = "Forja Basaltica"
 model_path = "assets/models/rocky/rocky.obj"
 radius = 15.0
 orbital_radius = 160.0
@@ -228,7 +228,7 @@ visible_gravity = true
   fade_range = 25.0
 
 [[planets]]
-id = "destruido"
+id = "Cenotafio Cero"
 model_path = "assets/models/destroyed/PlanetaDestruido.obj"
 radius = 12.0
 orbital_radius = 235.0
@@ -259,7 +259,7 @@ visible_gravity = true
   collision_margin = 0.15
 
 [[planets]]
-id = "asteroide"
+id = "Asteroide 67"
 mesh_type = "icosphere"
 model_path = ""
 subdivisions = 2
@@ -277,7 +277,7 @@ gravity_radius = 12.0
 visible_gravity = false
 
 [[planets]]
-id = "kirby"
+id = "Parque kirby"
 model_path = "assets/models/kirby_planet/platform/platformobj.obj"
 radius = 10.0
 orbital_radius = 205.0
@@ -288,7 +288,7 @@ collision_margin = 3.5
 shader = "normal_mapped"
 gravity_strength = 8.0
 gravity_radius = 25.0
-visible_gravity = false
+visible_gravity = true
 
   [[planets.components]]
   name = "Propulsor"
@@ -341,7 +341,7 @@ visible_gravity = false
   collision_margin = 0.3
 
 [[planets]]
-id = "dona"
+id = "Anillo Glaseado"
 model_path = "assets/models/donut/donut_8.obj"
 radius = 45.0
 orbital_radius = 450.0
@@ -388,8 +388,8 @@ visible_gravity = true
   fade_range = 40.0
 
 [[planets]]
-id = "homero"
-parent_id = "dona"
+id = "Homero"
+parent_id = "Anillo Glaseado"
 model_path = "assets/models/homer/homero.obj"
 radius = 8.0
 orbital_radius = 80.0

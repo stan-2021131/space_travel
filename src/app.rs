@@ -829,7 +829,7 @@ impl App {
                         .get(idx)
                         .map(|p| p.id.as_str())
                         .unwrap_or("planeta"),
-                    Some(InspectedCelestial::Sun) => "Sol",
+                    Some(InspectedCelestial::Sun) => self.sun_body.id.as_str(),
                     None => "cuerpo",
                 };
                 println!(
@@ -1915,7 +1915,7 @@ impl App {
             let is_panoramic = self.local_flight_mode && in_interaction;
 
             planet_markers.push(PlanetMarker {
-                id: "sol",
+                id: self.sun_body.id.as_str(),
                 screen_x: tx,
                 screen_y: ty,
                 projected_radius: proj_radius,
@@ -2194,34 +2194,69 @@ impl App {
                 let pages = lore_entry.map(|e| e.paginas.as_slice()).unwrap_or(&[]);
 
                 let body_type = match planet.id.as_str() {
-                    "tierra" => "Planeta Habitable",
-                    "dona" => "Toroide Glaseado",
-                    "kirby" => "Planeta Biomecanico",
-                    "destruido" => "Planeta Fragmentado",
-                    "rocoso" => "Planeta Rocoso Arido",
-                    "asteroide" => "Asteroide Procedural",
-                    "homero" => "Satelite Orbital",
+                    "Eden Replicado" | "tierra" => "Planeta Habitable",
+                    "Anillo Glaseado" | "dona" => "Toroide Glaseado",
+                    "Parque kirby" | "kirby" => "Planeta Biomecanico",
+                    "Cenotafio Cero" | "destruido" => "Planeta Fragmentado",
+                    "Forja Basaltica" | "rocoso" => "Planeta Rocoso Arido",
+                    "Asteroide 67" | "asteroide" => "Asteroide Procedural",
+                    "Homero" | "homero" => "Satelite Orbital",
+                    _ if planet.parent_id.is_some() => "Satelite Orbital",
                     _ => "Cuerpo Celeste",
                 };
 
-                let surface_summary = match planet.id.as_str() {
-                    "tierra" => Some("48 (Robles, Pinos, Ciudad)".to_string()),
-                    "dona" => Some("32 (Pasteles, Galletas, Helados)".to_string()),
-                    "kirby" => Some("5 Modulos, 1 Propulsor".to_string()),
-                    "destruido" => Some("Superficie fragmentada".to_string()),
-                    "rocoso" => Some("6 Cadenas montanosas".to_string()),
-                    "asteroide" => Some("Malla deformada procedural".to_string()),
-                    _ => None,
+                let total_surface_objs: usize = planet
+                    .surface_groups
+                    .iter()
+                    .map(|g| g.instances.len())
+                    .sum();
+                let surface_summary = if total_surface_objs > 0 {
+                    if planet.surface_groups.len() == 1 {
+                        Some(format!(
+                            "{} ({})",
+                            total_surface_objs, planet.surface_groups[0].name
+                        ))
+                    } else {
+                        Some(format!(
+                            "{} objs ({} tipos)",
+                            total_surface_objs,
+                            planet.surface_groups.len()
+                        ))
+                    }
+                } else if !planet.components.is_empty() {
+                    Some(format!(
+                        "{} mod, {} propulsor",
+                        planet.components.len(),
+                        planet.thruster_flames.len()
+                    ))
+                } else if p_cfg
+                    .map(|c| c.deformation_amplitude.abs() > 1e-6)
+                    .unwrap_or(false)
+                {
+                    Some("Deformado procedural".to_string())
+                } else if !planet.debris_rings.is_empty() {
+                    Some("Corteza fragmentada".to_string())
+                } else {
+                    None
                 };
 
-                let moons_summary = match planet.id.as_str() {
-                    "dona" => Some("1 (Homero)".to_string()),
-                    "kirby" => Some("1 (Estrella)".to_string()),
-                    _ => None,
+                let mut moon_names: Vec<&str> =
+                    planet.moons.iter().map(|m| m.name.as_str()).collect();
+                for child in ctx.planets {
+                    if child.parent_id.as_deref() == Some(planet.id.as_str()) {
+                        moon_names.push(child.id.as_str());
+                    }
+                }
+                let moons_summary = if !moon_names.is_empty() {
+                    Some(format!("{} ({})", moon_names.len(), moon_names.join(", ")))
+                } else {
+                    None
                 };
 
-                let rings_summary = if planet.id == "destruido" {
-                    Some("20 Escombros orbitales".to_string())
+                let total_debris: usize =
+                    planet.debris_rings.iter().map(|r| r.instances.len()).sum();
+                let rings_summary = if total_debris > 0 {
+                    Some(format!("{} escombros", total_debris))
                 } else {
                     None
                 };
@@ -2259,9 +2294,9 @@ impl App {
                 let pages = lore_entry.map(|e| e.paginas.as_slice()).unwrap_or(&[]);
 
                 let body_type = if ctx.dyson_sphere.is_some() {
-                    "Enana Amarilla + Dyson"
+                    "Enana + Dyson"
                 } else {
-                    "Enana Amarilla (Plasma)"
+                    "Enana Amarilla"
                 };
 
                 let radius = if let Some(d) = ctx.dyson_sphere {
@@ -2271,15 +2306,15 @@ impl App {
                 };
 
                 let surface_summary = if ctx.dyson_sphere.is_some() {
-                    Some("Megaestructura Dyson activa".to_string())
+                    Some("Esfera de Dyson".to_string())
                 } else {
-                    Some("Corona solar de plasma".to_string())
+                    Some("Corona de plasma".to_string())
                 };
 
-                let moons_summary = Some(format!("{} Planetas en orbita", ctx.planets.len()));
+                let moons_summary = Some(format!("{} planetas", ctx.planets.len()));
 
                 Some(CelestialInspectionData {
-                    id: "sol",
+                    id: ctx.sun_body.id.as_str(),
                     title,
                     body_type,
                     radius_wu: radius,
@@ -2290,7 +2325,7 @@ impl App {
                     surface_objects_summary: surface_summary,
                     moons_summary,
                     rings_summary: None,
-                    shader_name: "PLASMA SOLAR (CPU)",
+                    shader_name: "PLASMA (CPU)",
                     lore_pages: pages,
                     current_page: ctx.story_box_page,
                     is_story_open: ctx.story_box_open,
@@ -2350,8 +2385,13 @@ impl App {
             None => &[],
         };
 
-        let max_text_width = 980.min(Self::WINDOW_WIDTH as i32 - 56) - 40;
-        let paginated = crate::hud::paginate_lore(lore_pages, max_text_width, 4, 1);
+        let max_text_width = crate::hud::story_box_text_width(Self::WINDOW_WIDTH as i32);
+        let paginated = crate::hud::paginate_lore(
+            lore_pages,
+            max_text_width,
+            crate::hud::STORY_BOX_MAX_LINES,
+            crate::hud::STORY_BOX_FONT_SCALE,
+        );
         paginated.len().max(1)
     }
 }

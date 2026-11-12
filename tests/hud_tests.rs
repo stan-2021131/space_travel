@@ -1,9 +1,10 @@
 use space_travel::buffer::{Color, Framebuffer};
 use space_travel::combat::EncounterState;
 use space_travel::hud::{
-    CelestialInspectionData, HudContext, StoryBoxProps, draw_aim_reticle, draw_health_bar,
+    CelestialInspectionData, HudContext, PlanetMarker, STORY_BOX_FONT_SCALE, STORY_BOX_MAX_LINES,
+    StoryBoxProps, draw_aim_reticle, draw_curved_speedometer, draw_health_bar, draw_planet_markers,
     draw_speed_streaks, draw_story_dialog_box, draw_text, measure_text_width, paginate_lore,
-    project_world_to_screen, render_hud, wrap_text_to_lines,
+    project_world_to_screen, render_hud, story_box_text_width, wrap_text_to_lines,
 };
 use space_travel::math::{Mat4, Vec3};
 use space_travel::pipeline::ShaderMode;
@@ -305,14 +306,14 @@ fn lore_config_loads_all_bodies_from_file() {
         .expect("Debe cargar config/lore.toml correctamente");
 
     let expected_keys = [
-        "sol",
-        "tierra",
-        "dona",
-        "kirby",
-        "destruido",
-        "rocoso",
-        "asteroide",
-        "homero",
+        "Helios Tipo-II",
+        "Eden Replicado",
+        "Anillo Glaseado",
+        "Parque kirby",
+        "Cenotafio Cero",
+        "Forja Basaltica",
+        "Asteroide 67",
+        "Homero",
     ];
     for key in expected_keys {
         let entry = lore
@@ -320,6 +321,18 @@ fn lore_config_loads_all_bodies_from_file() {
             .unwrap_or_else(|| panic!("Debe existir lore para {}", key));
         assert!(!entry.nombre.is_empty());
         assert!(!entry.paginas.is_empty());
+        let paginated = paginate_lore(
+            &entry.paginas,
+            story_box_text_width(1280),
+            STORY_BOX_MAX_LINES,
+            STORY_BOX_FONT_SCALE,
+        );
+        assert_eq!(
+            paginated.len(),
+            entry.paginas.len(),
+            "Cada página de lore para '{}' debe caber sin desbordarse en StoryBox",
+            key
+        );
     }
 
     // Probar cuerpo inexistente
@@ -387,4 +400,191 @@ fn panoramic_inspection_hud_replaces_combat_hud_when_active() {
     render_hud(&mut fb_panoramic, &panoramic_ctx);
 
     assert_ne!(fb_normal.as_bytes(), fb_panoramic.as_bytes());
+}
+
+#[test]
+fn scaled_hud_panels_and_texts_fit_without_overlap_on_1280x720() {
+    // 1. Verificar márgenes en HUD de vuelo normal (1280x720) a scale = 2
+    let banner_bottom = 12 + 36; // 48
+    let panel_top = 60;
+    assert!(
+        panel_top > banner_bottom,
+        "Los paneles laterales deben empezar debajo del banner superior"
+    );
+
+    let controls_left = 18;
+    let controls_right = controls_left + 390; // 408
+    let controls_bottom = panel_top + 268; // 328
+
+    let stats_left = 1280 - 376 - 18; // 886
+    let stats_bottom = panel_top + 330; // 390
+    assert!(
+        stats_left > controls_right + 100,
+        "Debe quedar amplio espacio central entre Controles y Stats"
+    );
+
+    let health_top = (720 - 22 - 24) - 28; // 646
+    assert!(
+        health_top > controls_bottom,
+        "La barra de vida inferior no debe chocar con el panel de controles"
+    );
+
+    let speedo_top = (720 - 28) - 165; // 527
+    assert!(
+        speedo_top > stats_bottom,
+        "El velocímetro inferior derecho no debe chocar con el panel de stats"
+    );
+
+    // Verificar anchos máximos de textos a scale = 2 en Controles y Stats
+    assert!(measure_text_width("Disparar proyectiles", 2) + 132 <= 390);
+    assert!(measure_text_width("3RA EXTERIOR", 2) + 208 <= 376);
+    assert!(
+        measure_text_width("ALERTA DE COMBATE: HOSTILES EN MANIOBRA DE INTERCEPCION", 2) <= 680
+    );
+
+    // 2. Verificar márgenes en HUD panorámico (1280x720) a scale = 2 / 3
+    let title_block_bottom = 18 + 7 * 3 + 6 + 14; // 59
+    let general_panel_top = 74;
+    let general_panel_max_bottom = general_panel_top + (30 + 14 + 10 * 26 + 8); // 386
+    assert!(
+        general_panel_top > title_block_bottom,
+        "Datos Generales debe quedar debajo del título"
+    );
+
+    let story_top = 720 - 186 - 20; // 514
+    assert!(
+        story_top > general_panel_max_bottom,
+        "StoryBox inferior no debe chocar con Datos Generales"
+    );
+
+    // Verificar que los valores de Datos Generales caben dentro del ancho del panel (405 px, value_x = 132)
+    let sample_values = [
+        "Anillo Glaseado",
+        "Planeta Fragmentado",
+        "48 objs (5 tipos)",
+        "7 mod, 1 propulsor",
+        "Deformado procedural",
+        "12.0 G (R: 28.0)",
+    ];
+    for val in sample_values {
+        assert!(
+            132 + measure_text_width(val, 2) < 405,
+            "Valor '{}' debe caber en Datos Generales a scale = 2",
+            val
+        );
+    }
+}
+
+#[test]
+fn underscore_glyph_renders_bottom_bar() {
+    let mut fb = Framebuffer::new(20, 15);
+    fb.clear(Color::BLACK);
+    let col = Color::rgb(200, 220, 255);
+    draw_text(&mut fb, 2, 2, "_", col, 1);
+
+    // La fila inferior del glifo (y = 2 + 6 = 8) debe tener la barra de 5 píxeles
+    for x in 2..7 {
+        assert_eq!(fb.get_pixel(x, 8), col);
+    }
+    assert_eq!(fb.get_pixel(2, 2), Color::BLACK);
+}
+
+#[test]
+fn curved_speedometer_avoids_arc_overlap_at_four_digit_speeds() {
+    let mut fb = Framebuffer::new(1280, 720);
+    fb.clear(Color::BLACK);
+
+    let ctx = HudContext {
+        player_health: 100.0,
+        player_max_health: 100.0,
+        player_alive: true,
+        ship_speed_wu: 72.0, // 72 * 14.5 = 1044 KM/H (4 dígitos)
+        ship_max_speed_wu: 75.0,
+        combat_state: EncounterState::Dormant,
+        nearest_body_name: None,
+        nearest_body_distance_wu: 100.0,
+        is_near_orbit: false,
+        local_flight_mode: false,
+        gravity_enabled: true,
+        shader_mode: ShaderMode::Normal,
+        show_controls: false,
+        show_stats: false,
+        current_fps: 60.0,
+        frame_time_ms: 16.6,
+        frame_stats: FrameStats::default(),
+        first_person: false,
+        aim_screen_pos: None,
+        sim_time: 0.0,
+        planet_markers: &[],
+        inspection_data: None,
+    };
+
+    draw_curved_speedometer(&mut fb, &ctx);
+
+    // El texto verde (60, 235, 140) no debe invadir la zona del arco en x <= 1095
+    let text_col = Color::rgb(60, 235, 140);
+    for y in 650..700 {
+        for x in 1070..=1095 {
+            assert_ne!(
+                fb.get_pixel(x, y),
+                text_col,
+                "El texto de 4 dígitos no debe superponerse al arco en ({}, {})",
+                x,
+                y
+            );
+        }
+    }
+    // Pero sí debe haberse dibujado a la derecha del arco
+    let mut has_speed_text = false;
+    for y in 655..685 {
+        for x in 1100..1240 {
+            if fb.get_pixel(x, y) == text_col {
+                has_speed_text = true;
+                break;
+            }
+        }
+    }
+    assert!(has_speed_text);
+}
+
+#[test]
+fn planet_marker_long_labels_stay_inside_horizontal_bounds() {
+    let mut fb = Framebuffer::new(1280, 720);
+    fb.clear(Color::BLACK);
+
+    let markers = [
+        PlanetMarker {
+            id: "Anillo Glaseado",
+            screen_x: 20, // Muy pegado al borde izquierdo
+            screen_y: 300,
+            projected_radius: 20,
+            distance_wu: 450.0,
+            is_near: true,
+            in_interaction_range: true,
+            is_panoramic_active: false,
+        },
+        PlanetMarker {
+            id: "Cenotafio Cero",
+            screen_x: 1265, // Muy pegado al borde derecho
+            screen_y: 300,
+            projected_radius: 20,
+            distance_wu: 235.0,
+            is_near: true,
+            in_interaction_range: false,
+            is_panoramic_active: false,
+        },
+    ];
+
+    draw_planet_markers(&mut fb, &markers);
+
+    // Las pastillas de texto se clipean con margen de 4 px sin salirse a los bordes x < 4 o x >= 1276
+    let name_pill_bg = Color::rgb(10, 15, 22);
+    let hint_pill_bg = Color::rgb(15, 30, 45);
+    // top_y = 289 -> name_pill en y = 267..287, hint_pill en y = 245..265
+    assert_eq!(fb.get_pixel(4, 268), name_pill_bg);
+    assert_eq!(fb.get_pixel(2, 268), Color::BLACK);
+    assert_eq!(fb.get_pixel(4, 246), hint_pill_bg);
+    assert_eq!(fb.get_pixel(2, 246), Color::BLACK);
+    assert_eq!(fb.get_pixel(1275, 268), name_pill_bg);
+    assert_eq!(fb.get_pixel(1278, 268), Color::BLACK);
 }

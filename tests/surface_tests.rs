@@ -221,7 +221,7 @@ fn test_toml_planet_surface_objects_parsing() {
     let rocky = config
         .planets
         .iter()
-        .find(|p| p.id == "rocoso")
+        .find(|p| p.id == "Forja Basaltica")
         .expect("Debe existir planeta rocoso");
 
     assert_eq!(
@@ -393,7 +393,7 @@ fn test_toml_donut_planet_parsing() {
     let dona = config
         .planets
         .iter()
-        .find(|p| p.id == "dona")
+        .find(|p| p.id == "Anillo Glaseado")
         .expect("Debe existir planeta dona en toml");
 
     assert_eq!(dona.model_path, "assets/models/donut/donut_8.obj");

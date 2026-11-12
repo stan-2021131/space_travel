@@ -202,7 +202,7 @@ fn test_ship_can_escape_donut_surface_with_forward_thrust() {
     let donut = config
         .planets
         .iter()
-        .find(|planet| planet.id == "dona")
+        .find(|planet| planet.id == "Anillo Glaseado")
         .unwrap();
     assert_eq!(donut.gravity_strength, 13.0);
 

@@ -23,10 +23,10 @@ pub use camera::{Camera, Frustum, Plane};
 pub use combat::{CombatSystem, EncounterState, Enemy, Projectile, ProjectileOwner};
 pub use config::{AppConfig, CelestialLoreEntry, LoreConfig};
 pub use hud::{
-    CelestialInspectionData, StoryBoxProps, draw_aim_reticle, draw_health_bar,
-    draw_orbital_lock_reticle, draw_orbital_mode_badge, draw_planet_inspection_hud,
-    draw_speed_streaks, draw_story_dialog_box, paginate_lore, project_world_to_screen,
-    wrap_text_to_lines,
+    CelestialInspectionData, STORY_BOX_FONT_SCALE, STORY_BOX_MAX_LINES, StoryBoxProps,
+    draw_aim_reticle, draw_health_bar, draw_orbital_lock_reticle, draw_orbital_mode_badge,
+    draw_planet_inspection_hud, draw_speed_streaks, draw_story_dialog_box, paginate_lore,
+    project_world_to_screen, story_box_text_width, wrap_text_to_lines,
 };
 pub use material::Material;
 pub use math::{Mat4, Transform, Vec2, Vec3, Vec4};

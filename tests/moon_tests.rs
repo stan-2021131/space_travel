@@ -10,7 +10,7 @@ fn star_moon() -> (Moon, Vec3) {
     let kirby = config
         .planets
         .iter()
-        .find(|planet| planet.id == "kirby")
+        .find(|planet| planet.id == "Parque kirby")
         .unwrap();
     let moon_config = &kirby.moons[0];
     let mesh = Arc::new(Mesh::load_from_obj(Path::new(&moon_config.model_path)).unwrap());
@@ -76,7 +76,7 @@ fn moon_orbit_clears_kirby_collision_sphere() {
     let kirby = config
         .planets
         .iter()
-        .find(|planet| planet.id == "kirby")
+        .find(|planet| planet.id == "Parque kirby")
         .unwrap();
     let moon = &kirby.moons[0];
     let clearance = moon.orbital_radius

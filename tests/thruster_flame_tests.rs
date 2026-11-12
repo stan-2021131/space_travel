@@ -50,7 +50,7 @@ fn configured_flames_point_away_from_their_thrusters() {
     let kirby = config
         .planets
         .iter()
-        .find(|planet| planet.id == "kirby")
+        .find(|planet| planet.id == "Parque kirby")
         .unwrap();
     assert_eq!(kirby.thruster_flames.len(), 1);
 

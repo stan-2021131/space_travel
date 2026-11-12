@@ -34,14 +34,14 @@ fn test_valid_configuration_loading() {
     let rocoso = config
         .planets
         .iter()
-        .find(|planet| planet.id == "rocoso")
+        .find(|planet| planet.id == "Forja Basaltica")
         .expect("Debe existir el planeta rocoso");
     assert_eq!(rocoso.shader, "normal_mapped");
 
     let tierra = config
         .planets
         .iter()
-        .find(|planet| planet.id == "tierra")
+        .find(|planet| planet.id == "Eden Replicado")
         .expect("Debe existir el planeta tierra");
     assert_eq!(tierra.shader, "earth_like");
     assert_eq!(
@@ -62,7 +62,7 @@ fn test_valid_configuration_loading() {
     let destroyed = config
         .planets
         .iter()
-        .find(|planet| planet.id == "destruido")
+        .find(|planet| planet.id == "Cenotafio Cero")
         .expect("Debe existir el planeta destruido");
     assert_eq!(destroyed.debris_rings.len(), 1);
     assert_eq!(destroyed.debris_rings[0].count, 20);
@@ -70,7 +70,7 @@ fn test_valid_configuration_loading() {
     let kirby = config
         .planets
         .iter()
-        .find(|planet| planet.id == "kirby")
+        .find(|planet| planet.id == "Parque kirby")
         .expect("Debe existir el planeta Kirby");
     assert_eq!(kirby.components.len(), 7);
     let coaster_train = kirby
@@ -95,15 +95,22 @@ fn test_valid_configuration_loading() {
         .collect();
     assert_eq!(
         music_body_ids,
-        ["sol", "tierra", "rocoso", "destruido", "kirby", "dona"]
+        [
+            "Helios Tipo-II",
+            "Eden Replicado",
+            "Forja Basaltica",
+            "Cenotafio Cero",
+            "Parque kirby",
+            "Anillo Glaseado"
+        ]
     );
 
     let homero = config
         .planets
         .iter()
-        .find(|planet| planet.id == "homero")
+        .find(|planet| planet.id == "Homero")
         .expect("Debe existir el cuerpo Homero como luna");
-    assert_eq!(homero.parent_id.as_deref(), Some("dona"));
+    assert_eq!(homero.parent_id.as_deref(), Some("Anillo Glaseado"));
     assert!(
         homero.radius < 45.0,
         "Homero debe ser más pequeño que el planeta dona"
@@ -169,7 +176,7 @@ fn test_invalid_configuration_rejections() {
     let moon = bad_moon_orbit
         .planets
         .iter_mut()
-        .find(|p| p.id == "homero")
+        .find(|p| p.id == "Homero")
         .unwrap();
     moon.orbital_radius = 20.0; // Menor que el radio de la dona (45.0)
     assert!(bad_moon_orbit.validate(Path::new("test.toml")).is_err());
@@ -179,7 +186,7 @@ fn test_invalid_configuration_rejections() {
     let moon2 = bad_moon_parent
         .planets
         .iter_mut()
-        .find(|p| p.id == "homero")
+        .find(|p| p.id == "Homero")
         .unwrap();
     moon2.parent_id = Some("planeta_fantasma".to_string());
     assert!(bad_moon_parent.validate(Path::new("test.toml")).is_err());
@@ -189,16 +196,16 @@ fn test_invalid_configuration_rejections() {
     let moon_self = bad_moon_self
         .planets
         .iter_mut()
-        .find(|p| p.id == "homero")
+        .find(|p| p.id == "Homero")
         .unwrap();
-    moon_self.parent_id = Some("homero".to_string());
+    moon_self.parent_id = Some("Homero".to_string());
     assert!(bad_moon_self.validate(Path::new("test.toml")).is_err());
 
     // Luna cuyo astro padre es a su vez una luna
     let mut bad_nested_moon = valid.clone();
     let mut sub_moon = valid.planets[0].clone();
     sub_moon.id = "sub_luna".to_string();
-    sub_moon.parent_id = Some("homero".to_string());
+    sub_moon.parent_id = Some("Homero".to_string());
     sub_moon.orbital_radius = 50.0;
     bad_nested_moon.planets.push(sub_moon);
     assert!(bad_nested_moon.validate(Path::new("test.toml")).is_err());
@@ -249,7 +256,7 @@ fn test_invalid_configuration_rejections() {
     let destroyed_index = valid
         .planets
         .iter()
-        .position(|planet| planet.id == "destruido")
+        .position(|planet| planet.id == "Cenotafio Cero")
         .unwrap();
     let mut bad_ring_radius = valid.clone();
     bad_ring_radius.planets[destroyed_index].debris_rings[0].inner_radius =
@@ -265,7 +272,7 @@ fn test_invalid_configuration_rejections() {
     let kirby_index = valid
         .planets
         .iter()
-        .position(|planet| planet.id == "kirby")
+        .position(|planet| planet.id == "Parque kirby")
         .unwrap();
     let mut bad_component_path = valid.clone();
     bad_component_path.planets[kirby_index].components[0].model_path = "  ".to_string();

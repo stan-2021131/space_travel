@@ -3,55 +3,58 @@
 # Sistema Solar - Proyecto Final Gráficas por Computadora
 # ============================================================================
 
-[sol]
-nombre = "Estrella Central (Sol)"
+["Helios Tipo-II"]
+nombre = "Helios Tipo-II (Corazon de Dyson)"
 paginas = [
-    "El corazon termonuclear del sistema. Una enana amarilla de plasma incandescente cuya inmensa radiacion y atraccion gravitatoria gobierna las orbitas de todos los mundos circundantes.",
-    "Los registros indican la construccion de una megaestructura de Dyson a su alrededor para recolectar energia estelar masiva. Las naves que se aproximan en exceso sufren dano severo por radiacion termica."
+    "Bitacora del Explorador: El corazon incandescente del sistema. Tras recibir conocimientos ancestrales de su deidad salvadora, esta especie dio un salto imposible hasta consolidarse como una civilizacion Tipo II en la escala de Kardashev.",
+    "Hoy una titanica Esfera de Dyson envuelve la estrella para cosechar su energia absoluta. Ese poder alimenta desde la red de defensa orbital hasta... bueno, proyectos planetarios francamente cuestionables."
 ]
 
-[tierra]
-nombre = "Planeta Tierra"
+["Cenotafio Cero"]
+nombre = "Cuna Fracturada (Cenotafio Cero)"
 paginas = [
-    "Planeta templado de clase terrestre. Posee densos bosques de robles y pinos, asi como ciudades con fabricas y complejos residenciales distribuidos a lo largo de su corteza.",
-    "Su atmosfera equilibrada y campo gravitatorio constante lo convierten en el bastión biologico de la flota. Las lecturas orbitales muestran cero anomalias hostiles en superficie."
+    "Planeta de origen donde esta civilizacion dio sus primeros pasos. Fue partido por un asteroide colosal imposible de frenar con su antigua tecnologia; sobrevivieron solo gracias al aviso previo de un ente espacial al que acabaron nombrando su dios.",
+    "Lejos de quedar en el olvido, el impacto expuso vetas minerales ultradensas en su nucleo abierto. Hoy sirve al mismo tiempo como santuario conmemorativo y cantera estrategica de cristales geotermicos entre sus escombros."
 ]
 
-[rocoso]
-nombre = "Planeta Rocoso"
+["Forja Basaltica"]
+nombre = "Forja Basaltica (Yunque Solar)"
 paginas = [
-    "Un mundo arido y escarpado dominado por colosales cadenas montanosas y canones basalticos. La ausencia de vegetacion se compensa con una rica concentracion de minerales pesados."
+    "Abrasado por su cercania extrema al Sol, este mundo arido resulta letal para la vida organica. Sin embargo, sus profundos canones esconden los metales pesados indispensables para construir naves y anillos de la Esfera de Dyson.",
+    "Los ingenieros aprovecharon el calor estelar implacable para transformar su cara diurna en una gigantesca fundicion a cielo abierto. Todo el blindaje de la flota patrullera nace forjado entre estas cordilleras basalticas."
 ]
 
-[destruido]
-nombre = "Planeta Destruido"
+["Eden Replicado"]
+nombre = "Eden Replicado (Eco del Hogar)"
 paginas = [
-    "Vestigios de un planeta que sufrio un cataclismo tectonico desconocido en eras pasadas. Su nucleo expuesto permanece rodeado por un denso cinturon de escombros y asteroides que giran en trayectoria eliptica."
+    "Tras escapar del asteroide, la especie construyo una replica exacta de su mundo natal perdido. El paisaje alterna bosques ordenados de robles y pinos con ciudades tranquilas, casas familiares y fabricas limpias bajo un cielo calibrado.",
+    "La vida aqui transcurre en una rutina pacifica casi irreal. Aun asi, los ancianos admiten una extrana nostalgia al pasear por colinas identicas a las originales, sabiendo que todo su horizonte fue reconstruido a partir de archivos."
 ]
 
-[asteroide]
-nombre = "Asteroide Procedural"
+["Parque kirby"]
+nombre = "Parque kirby (Ultimo Refugio)"
 paginas = [
-    "Cuerpo menor irregular generado por la condensacion de polvo cosmico primigenio. Su superficie asimetrica presenta deformaciones orograficas unicas calculadas proceduralmente en tiempo real."
+    "Mas del 80% de la poblacion murio en el desastre del asteroide. La mayoria de los sobrevivientes pertenecia a la clase alta, acostumbrada al lujo y al ocio, por lo que terminaron dedicando un planeta entero al entretenimiento.",
+    "En el centro se alza una colosal estatua rosada en honor a su dios salvador, vigilada por una luna en forma de estrella. El contraste entre la fe devota y el ambiente de parque tematico sigue descolocando mis registros.",
+    "Por si otro asteroide llegara a amenazarlos, instalaron un propulsor gigante bajo la base del santuario para poder despegar con toda la fiesta a cuestas. Debo admitir que la prevencion de la elite es... peculiar."
 ]
 
-[kirby]
-nombre = "Planeta Pop"
+["Anillo Glaseado"]
+nombre = "Anillo Glaseado (Sector Confiteria)"
 paginas = [
-    "Una singular masa planetaria de tono rosado dotada de un gigantesco propulsor de maniobra orbital en su polo inferior, ensamblado a partir de modulos y componentes independientes.",
-    "Orbitado de forma perpetua por la luna Estrella, este mundo genera un campo inusual. Sus caracteristicas morfologicas desafian la clasificacion astronomica estandar."
+    "Debo mantener el profesionalismo en este informe, aunque la vista no ayude. Al intentar perfeccionar su tecnologia de terraformacion, un calculo fallido remodelo todo el planeta en una descomunal dona glaseada.",
+    "En lugar de corregirlo, aprovecharon el accidente y lo convirtieron en el mayor centro de produccion alimentaria del sistema. Ahora su superficie abastece al cuadrante entero de pasteles, galletas, helados y paletas monumentales."
 ]
 
-[dona]
-nombre = "Planeta Dona"
+[Homero]
+nombre = "Centinela del Remordimiento (Cabeza Orbital)"
 paginas = [
-    "Un colosal cuerpo celeste de geometria toroidal dulce. Su superficie glaseada esta repleta de megaestructuras conicas de helado, rebanadas de pastel, galletas y paletas confitadas.",
-    "Representa el centro de atraccion mas dulce de todo el cuadrante. La gravedad toroidal curva el horizonte de forma singular, creando un campo visual extraordinario durante el vuelo orbital."
+    "Registro oficial con serias dudas sobre la etica penal local: como castigo para el cientifico que convirtio todo un planeta en dona, lo transformaron en una cabeza giratoria condenada a observar su creacion por la eternidad.",
+    "Permanece atrapado en orbita sincrona frente al gigante dulce. Incluso a varios kilometros de distancia juraria que no sufre por el castigo, sino por no poder darle una mordida."
 ]
 
-[homero]
-nombre = "Satelite Homero"
+["Asteroide 67"]
+nombre = "Heraldo Errante (Asteroide 67)"
 paginas = [
-    "Satelite natural en orbita sincrona alrededor del Planeta Dona. Su trayectoria permanece inextricablemente vinculada a la atraccion gastronomica ejercida por el gigante glaseado."
+    "Fragmento errante de la misma familia rocosa que destruyo el planeta natal. Aunque su tamano es modesto, las patrullas del sistema vigilan su orbita sin descanso, probablemente dudando que su dios vuelva a avisarles dos veces."
 ]
-
