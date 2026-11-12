@@ -2,6 +2,10 @@
 
 Proyecto final del curso de **Gráficas por Computadora (2026)**. Consiste en un sistema solar explorable desde una nave espacial, renderizado íntegramente mediante un pipeline 3D por software ejecutado en CPU en Rust.
 
+### Integrantes
+- **Sergio Estuardo Tan Coromac** - `24759`
+- **Juan Daniel Ordoñez Sierra** - `24979`
+
 ---
 
 ## 1. Propósito del Proyecto
@@ -204,13 +208,7 @@ Todos los fragmentos se evalúan en CPU interpolando baricéntricamente normales
 | `rodio` | `0.21.1` | Reproducción, loop y mezcla gradual de música OGG/WAV | Backend de audio aislado; no sustituye ninguna etapa gráfica, física o de simulación evaluada. |
 
 ### Modelos y Recursos 3D
-
-| Recurso | Uso en el Proyecto | Procedencia |
-|---|---|---|
-| `Mountain_1_LOD_High.obj` / `.mtl` | Relieve procedural sobre superficie planetaria | Nature Pack Low Poly (`Nature Pack Low Poly.blend`) |
-| `rocky.obj` / `rocky_diffuse.png` | Geometría y textura base del planeta rocoso | Creado para el proyecto |
-| `sun.obj` | Esfera geodésica del cuerpo central solar | Creado para el proyecto |
-| `nave.obj` | Geometría de la nave espacial del jugador | Creado para el proyecto |
+El catálogo completo de modelos `.obj`/`.mtl`, texturas `.png`, archivos fuente `.blend` y pistas de audio `.ogg` se detalla en la **Sección 17 (Recursos Externos y Modelos)**.
 
 ---
 
@@ -252,10 +250,13 @@ cargo run --release
 | `R` | Reiniciar posición, orientación y velocidad de la nave a los valores iniciales. |
 | `Espacio` | Disparar un proyectil desde la nave. |
 | `G` | Alternar atracción gravitatoria planetaria en tiempo real (Activa / Desactivada). |
-| `C` | Alternar cámara panorámica de planeta al estar cerca de un astro (vista exterior centrada en el planeta para circunnavegarlo y apreciarlo). |
+| `C` | Alternar cámara panorámica e inspección de astro cercano (planetas o Sol) con panel de datos y bitácora. |
+| `Enter` | Avanzar de página en el cuadro de historia dentro de la vista panorámica, cerrarlo al final o reabrirlo. |
+| `V` | Alternar cámara entre tercera persona exterior y cabina de primera persona con visor HUD. |
+| `H` / `F1` | Mostrar u ocultar el panel lateral izquierdo de controles de vuelo. |
 | `F4` | Activar o desactivar el encuentro con enemigos. |
 | `F2` | Alternar modo de shader CPU: **Normal** $\to$ **Toon (Anime Cel-Shading)** $\to$ **Depuración de Profundidad (Depth Debug)** $\to$ **Depuración de Normales (Normals Debug)**. |
-| `F3` | Alternar reporte de métricas en consola: **Compacto** $\to$ **Detallado** $\to$ **Desactivado (Off)**. |
+| `F3` | Alternar panel HUD de estadísticas detalladas y formato de métricas en consola: **Compacto** $\to$ **Detallado** $\to$ **Desactivado (Off)**. |
 | `Escape` | Cerrar la aplicación. |
 
 Presionar `G` activa o desactiva la atracción gravitatoria planetaria en tiempo real
@@ -330,7 +331,7 @@ El simulador implementa un Head-Up Display (HUD) táctico de ciencia ficción co
 8. **Indicadores de Planetas y Flechas Proporcionales**:
    - Para cada planeta visible en pantalla (y el Sol), se proyecta analíticamente su cúspide superior `(tx, ty)` y su radio visible en píxeles.
    - **A larga distancia**: Dibuja una flecha triangular $\nabla$ orientada hacia abajo apuntando a la parte superior del planeta. El tamaño del triángulo escala proporcionalmente al radio proyectado del planeta en pantalla (`projected_radius / 6`), adaptándose automáticamente si el tamaño del planeta cambia en el archivo de configuración.
-   - **Al aproximarse (`distancia < radio * 6.5`)**: Muestra el nombre en mayúsculas y la distancia en tiempo real (ej. `TIERRA [42 WU]`).
+   - **Al aproximarse (`distancia < radio * 6.5`)**: Muestra el nombre en mayúsculas y la distancia en tiempo real (ej. `EDEN REPLICADO [42 WU]`).
    - **En rango orbital (`nearby_celestial`)**: Resalta en cian la tecla de interacción orbital: `[C] VISTA PANORAMICA` (o `[C] SALIR PANORAMICA`).
 9. **HUD Panorámico de Inspección y Registro de Bitácora / Historia (`StoryBox`)**:
    - Al aproximarse a cualquier planeta o al Sol y presionar `[C]`, se activa la vista panorámica orbital exterior.
@@ -339,13 +340,13 @@ El simulador implementa un Head-Up Display (HUD) táctico de ciencia ficción co
    - **Panel Lateral Derecho ("DATOS GENERALES")**: Tarjeta tecnológica con ID, tipo astronómico, radio en WU, período orbital, rotación axial, aceleración gravitatoria, estructuras en superficie, satélites y shader de CPU evaluado.
    - **Componente Reutilizable de Cuadro de Historia / Bitácora (`StoryBox`)**:
      - Componente modular desacoplado (`draw_story_dialog_box`) que recibe propiedades (`StoryBoxProps`), tamaño fijo y texto de historia.
-     - Lee los textos centralizados desde `config/lore.toml` indexados por identificador de astro (`sol`, `tierra`, `dona`, `kirby`, `destruido`, `rocoso`, `asteroide`, `homero`).
+     - Lee los textos centralizados desde `config/lore.toml` indexados por identificador de astro (`Helios Tipo-II`, `Eden Replicado`, `Anillo Glaseado`, `Parque kirby`, `Cenotafio Cero`, `Forja Basaltica`, `Asteroide 67`, `Homero`).
      - Envuelve el texto en líneas ajustadas al ancho de pantalla (`wrap_text_to_lines`) y divide párrafos largos en páginas confortables (`paginate_lore`).
      - **Navegación con `[ENTER]`**: En páginas intermedias muestra `[ENTER] SIGUIENTE PAGINA [>]` indicando `(Pág. X/Y)`. Al alcanzar la última página, muestra `[ENTER] CERRAR REGISTRO [X]`. Al pulsar `[ENTER]` en la última página, el cuadro se cierra y deja la vista panorámica completamente despejada con una barra inferior discreta: `[C] SALIR DE VISTA | [ENTER] REABRIR REGISTRO`. Al pulsar `[ENTER]` nuevamente, el cuadro se reabre desde el inicio.
      - **Tolerancia a fallos**: Si un astro no posee lore en `lore.toml` o el archivo no existe, muestra un mensaje informativo seguro (`"Sin registros de bitacora disponibles para este sector."`) sin causar panics.
 
 ### Resolución Panorámica y Rendimiento
-- **Resolución**: Ampliada a `1280x720` (16:9), ofreciendo un área central despejada de más de 780 píxeles entre los paneles laterales.
+- **Resolución**: Ampliada a `1280x720` (16:9), con tipografía bitmap escalada a `2x`/`3x` ($10 \times 14\text{ px}$ y $15 \times 21\text{ px}$) para alta legibilidad y más de $470\text{ px}$ de zona central libre entre los paneles laterales cuando están desplegados.
 - **Rendimiento**: Todo el trazado de líneas, arcos, rectángulos y tipografía bitmap $5 \times 7$ toma menos de $0.08\text{ ms}$ por cuadro en CPU, garantizando 60 FPS estables sin degradación de rendimiento.
 
 ---
@@ -434,49 +435,51 @@ El proyecto cuenta con una amplia batería de pruebas automatizadas determinista
 
 ## 16. Tabla de Calificación Oficial
 
-| Categoría | Característica | Puntos Disponibles | Puntos Reclamados | Estado |
-|---|---|:---:|:---:|---|
-| **Base Habilitante** | Renderer 3D propio en CPU (Sin funciones 3D de Raylib) | Requisito | 0 | Implementado y Validado |
-| **Base Habilitante** | Carga y dibujo con MVP, Z-Buffer y Shader en CPU | Requisito | 0 | Implementado y Validado |
-| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **50** | **Reclamado**: 5 planetas principales con órbita, rotación sobre eje y exploración cercana: Rocoso, Destruido con anillos, Asteroide Procedural, Kirby compuesto y Dona gigante (más luna satelital Homero en órbita jerárquica) |
-| **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **20** | **Reclamado**: 5 modelos propios de superficie: Montaña (`Mountain_1_LOD_High.obj`), Pastel (`cake_slice.obj`), Galleta (`cookie.obj`), Helado (`ice_cream_cone.obj`) y Paleta (`lollipop.obj`) |
-| **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | **Reclamado**: Espiral de Fibonacci esférica determinista y distribución azimutal toroidal sobre corteza superior (`seed = 67`) |
-| **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | **Reclamado**: Base ortonormal local alineada a normal radial esférica y normal tangencial de toroide |
-| **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **24** | **Reclamado**: `ProceduralRockShader` + `ToonShader` + `ShipShader` + `AlienEnergyShader` / `ForceFieldShader` (6 pts c/u) |
-| **Renderizado** | Shader animado cuyo efecto cambia con el tiempo | 8 | **8** | **Reclamado**: `PlasmaShader` solar con armónicos animados con tiempo ($dt$) |
-| **Renderizado** | Mapeo de normales en renderer por software | 8 | **8** | **Reclamado**: Base ortonormal $TBN$ en CPU, interpolación en rasterizador y `NormalMappedShader` |
-| **Renderizado** | Deformación de geometría mediante ruido u otra función | 10 | **10** | **Reclamado**: Modificador `deform` con ruido 3D determinista (`seed = 67`) y recálculo analítico de normales |
-| **Renderizado** | Generación o subdivisión procedural de geometría previa a rasterizar | 10 | **10** | **Reclamado**: Generación de esfera geodésica analítica en `src/procedural/` y operador `subdivide()` |
-| **Navegación** | Modo de control local para rodear planeta cercano | 8 | **8** | **Reclamado**: Vista panorámica exterior centrada en planeta con tecla `[C]`, retícula de anclaje, badge HUD y vuelo orbital manual libre |
-| **Navegación** | Aceleración, frenado y giro progresivos | 8 | **8** | **Reclamado**: Cinemática arcade en `physics.rs` con empuje, drag exponencial y Euler |
-| **Navegación** | Atracción gravitatoria de planetas | 10 | **10** | **Reclamado**: Atracción gravitatoria newtoniana continua con decaimiento suave y toggle `[G]` |
-| **Navegación** | Colisión básica que impide atravesar planetas | 4 | **4** | **Reclamado**: Resolución analítica inelástica con conservación tangencial |
-| **Rendimiento** | Descarte de objetos fuera de la vista (Frustum Culling) | 7 | **7** | **Reclamado**: Extracción de 6 planos (Gribb-Hartmann) y descarte esférico multinivel |
-| **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0** | Pendiente (descarte $O(1)$ listo; pendiente modelo simplificado) |
-| **Presentación** | Coherencia visual y composición de la escena | 5 | **0** | No iniciado |
-| **Presentación** | Claridad de la experiencia y controles | 5 | **0** | No iniciado |
-| **TOTAL** | | **200 (Máx. 100)** | **182** | **182 pts formalmente implementados y demostrables en vivo (100% de la nota máxima)** |
+| Categoría | Característica | Puntos Disponibles | Puntos Reclamados | Dónde está en el Código | Dónde se ve en el Juego |
+|---|---|:---:|:---:|---|---|
+| **Base Habilitante** | Renderer 3D propio en CPU (Sin funciones 3D de Raylib) | Requisito | 0 | `src/pipeline/renderer.rs`, `src/pipeline/rasterizer.rs`, `src/buffer.rs`, `src/app.rs` (`update_texture` 2D) | Toda la ventana (`1280x720`): estrellas, naves, planetas y HUD renderizados desde framebuffer RAM |
+| **Base Habilitante** | Carga y dibujo con MVP, Z-Buffer y Shader en CPU | Requisito | 0 | `src/math.rs` (`Mat4`), `src/mesh.rs`, `src/buffer.rs` (`DepthBuffer`), `src/pipeline/shaders/` | Desde el inicio del juego: oclusión correcta entre nave, Sol, planetas y objetos |
+| **Planetas** | Planeta distinguible que orbita, rota y se observa de cerca (hasta 5) | 50 (10 c/u) | **50** | `src/scene.rs` (`CelestialBody`), `config/solar_system.toml`, `src/app.rs` | 6 planetas principales + luna satelital: `Eden Replicado`, `Forja Basaltica`, `Cenotafio Cero` (con anillo), `Asteroide 67`, `Parque kirby` y `Anillo Glaseado` (con luna `Homero`) |
+| **Superficie** | Tipo de modelo propio sobre planeta (hasta 4) | 20 (5 c/u) | **20** | `src/scene/surface.rs`, `src/scene/debris_ring.rs`, `config/solar_system.toml` | Sobre `Anillo Glaseado` (pastel, galleta, helado, paleta), `Cenotafio Cero` (2 escombros), `Eden Replicado` (árboles, casas, edificios, fábricas) y `Forja Basaltica` (montañas) |
+| **Superficie** | Distribución procedural reproducible sobre superficie | 10 | **10** | `src/scene/surface.rs` (`generate_spherical_distribution`, `generate_torus_surface_distribution`), `src/scene/debris_ring.rs` (`seed = 67`) | Al acercarse a `Eden Replicado`, `Forja Basaltica`, `Anillo Glaseado` y `Cenotafio Cero`: las instancias aparecen siempre en las mismas posiciones deterministas |
+| **Superficie** | Orientación correcta de objetos sobre superficie curva | 5 | **5** | `src/scene/surface.rs` (base ortonormal alineada a normal + `calculate_surface_embedding`), `src/app.rs` (`M_body * M_local`) | Al volar alrededor o usar `[C]` sobre `Eden Replicado`, `Forja Basaltica` y `Anillo Glaseado`: árboles, edificios, montañas y dulces siguen la curvatura y rotan con el planeta |
+| **Renderizado** | Shader propio con efecto visual distinguible (hasta 4) | 24 (6 c/u) | **24** | `src/pipeline/shaders/{earth_like,procedural_rock,toon,ship,alien_energy,force_field}.rs` | `EarthLikeShader` en `Eden Replicado`, `ProceduralRockShader` en `Asteroide 67`, `ShipShader` en nave, `ForceFieldShader` en atmósferas, `AlienEnergyShader` en enemigos (`[F4]`) y `ToonShader` global (`[F2]`) |
+| **Renderizado** | Shader animado cuyo efecto cambia con el tiempo | 8 | **8** | `src/pipeline/shaders/{plasma,thruster_flame,alien_energy,force_field}.rs`, `src/app.rs` (`set_time(sim_time)`) | Convección solar en `Helios Tipo-II`, llamas en propulsores de nave/`Parque kirby`, ondas de campos gravitatorios y bandas de naves enemigas (`[F4]`) |
+| **Renderizado** | Mapeo de normales en renderer por software | 8 | **8** | `src/mesh.rs` (base $TBN$), `src/pipeline/rasterizer.rs`, `src/pipeline/shaders/normal_mapped.rs` | Relieves y cráteres iluminados en `Forja Basaltica`, `Cenotafio Cero` (corteza y escombros) y base/propulsor de `Parque kirby` |
+| **Renderizado** | Deformación de geometría mediante ruido u otra función | 10 | **10** | `src/mesh.rs` (`Mesh::deform` con ruido 3D determinista y recálculo de normales), `src/app.rs` | Geometría asimétrica y rocosa de `Asteroide 67` en su órbita (`310 WU`) |
+| **Renderizado** | Generación o subdivisión procedural de geometría previa a rasterizar | 10 | **10** | `src/procedural/icosphere.rs` (`generate_icosphere`), `src/procedural/thruster_flame.rs`, `src/mesh.rs` (`subdivide`) | Esfera geodésica subdividida de `Asteroide 67` y conos procedurales de las llamas de propulsión de la nave y `Parque kirby` |
+| **Navegación** | Modo de control local para rodear planeta cercano | 8 | **8** | `src/camera.rs` (`update_panoramic_planet_view`), `src/app.rs` (`local_flight_mode`), `src/hud.rs` | Al aproximarse a cualquier planeta o `Helios Tipo-II` y pulsar `[C]`: encuadre panorámico orbital con vuelo libre, panel de datos y bitácora (`[ENTER]`) |
+| **Navegación** | Aceleración, frenado y giro progresivos | 8 | **8** | `src/physics.rs` (`ShipState::update` con `dt`, drag exponencial y boost) | Al pilotar con `W`/`S`, turbo `Shift + W`, `A`/`D`, `Q`/`E` y `Flechas`: respuesta suave independiente de FPS |
+| **Navegación** | Atracción gravitatoria de planetas | 10 | **10** | `src/physics.rs` (`apply_gravitational_attraction`), `src/app.rs` (`gravity_enabled`) | Al acercarse a cuerpos con esfera de influencia (marcada con `ForceFieldShader`): desvía la nave hacia el astro; activable/desactivable con `[G]` |
+| **Navegación** | Colisión básica que impide atravesar planetas | 4 | **4** | `src/physics.rs` (`resolve_sphere_collision_with_rebound`, `resolve_sphere_collision`), `src/app.rs` | Al chocar contra Sol, Esfera de Dyson, planetas, escombros o lunas: rebote físico, sacudida de cámara y chispas en CPU sin atravesar la malla |
+| **Rendimiento** | Descarte de objetos fuera de la vista (Frustum Culling) | 7 | **7** | `src/camera.rs` (`Frustum` Gribb-Hartmann), `src/pipeline/renderer.rs`, `src/stats.rs` | Al girar la cámara lejos de los astros y abrir `[F3]`: aumentan `OBJS CULL` y `TRIS CULL` mientras `TRIS RASTER` baja a 0 |
+| **Niveles de Detalle** | Niveles de detalle (LOD) según distancia | 8 | **0 (Pendiente)** | `src/scene/surface.rs` (`max_distance` / `fade_range` para descarte $O(1)$ de superficie; sin mallas LOD multi-resolución) | Objetos de superficie aparecen/desaparecen suavemente por distancia; pendiente intercambio por mallas simplificadas |
+| **Presentación** | Coherencia visual y composición de la escena | hasta 5 | **5** | `src/app.rs`, `config/solar_system.toml`, `config/lore.toml`, `src/audio.rs`, `src/particles.rs`, `src/pipeline/shaders/sky.rs` | Sistema coherente con historia unificada en `lore.toml`, Esfera de Dyson, montaña rusa, música contextual por planeta, chispas y fondo estelar |
+| **Presentación** | Claridad de la experiencia y controles | hasta 5 | **5** | `src/hud.rs`, `src/app.rs` | HUD `1280x720` legible (`2x`/`3x`) con controles colapsables `[H]`, stats `[F3]`, flechas proporcionales sobre astros, mira predictiva, cabina `[V]` y bitácora `[C]`/`[ENTER]` |
+| **TOTAL** | | **200 (Máx. 100)** | **192** | | **192 pts implementados y demostrables en vivo (nota máxima tope: 100 / 100)** |
 
 ---
 
-## 16. Recursos Externos y Modelos
+## 17. Recursos Externos y Modelos
 
 | Recurso | Archivo(s) | Uso en el Proyecto | Procedencia |
 |---|---|---|---|
-| **Nave Espacial** | `assets/models/nave.obj` | Vehículo del jugador para exploración interactiva | Modelo base libre en formato OBJ adaptado para escala de simulación |
-| **Naves Enemigas** | `assets/models/enemigos.obj` | Naves alienígenas hostiles de combate y patrulla | Modelo 3D propio creado por el equipo para el proyecto |
-| **Montañas** | `assets/models/objects/mountain/` | Objetos de relieve distribuidos sobre superficie esférica | Geometría de entorno en formato OBJ con archivo MTL asociado |
-| **Dulces de Superficie** | `assets/models/objects/{cake,cookie,ice_cream,lollipop}/` | Rebanadas de pastel, galletas con chispas, conos de helado y paletas en la superficie del planeta dona | Modelos 3D propios en formato OBJ/MTL creados para la corteza dulce |
-| **Planeta Rocoso** | `assets/models/rocky/` | Malla esférica, textura difusa y mapa de normales en espacio tangente | Esfera poligonal UV con texturas PNG (albedo y normal map $TBN$) |
-| **Planeta Dona** | `assets/models/donut/donut_8.obj` | Planeta toroidal lejano (260 WU) con campo de fuerza visible y textura horneada (`donut_8.png`) | Modelo 3D toroidal de baja poligonización con textura difusa |
-| **Sol** | `assets/models/sun/` | Estrella central emisora de luz y origen de coordenadas | Malla esférica UV evaluada con `PlasmaShader` animado |
-| **Planeta Destruido** | `assets/models/destroyed/` | Segundo planeta explorable, con geometría fragmentada, albedo y normal map | Modelo creado por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
-| **Escombros orbitales** | `assets/models/objects/escombro1/` y `escombro2/` | Dos variantes reutilizadas en el anillo del planeta destruido | Modelos creados por Juanda; texturas generadas con asistencia de Gemini y revisadas por el equipo |
-| **Planeta Kirby** | `assets/models/kirby_planet/` y `assets/sources/kirby_planet/` | Plataforma orbital, propulsor y personaje compuesto por cuerpo, pies, ojos y boca | Modelado y ensamblado por Juanda en Blender; texturas generadas con asistencia de Gemini y revisadas por el equipo |
-| **Luna estrella** | `assets/models/kirby_planet/star_moon/` y `assets/sources/Star_Moon/` | Luna orbital amarilla del planeta de diversiones Kirby | Modelo propio creado y optimizado por Juanda en Blender |
-| **Montaña rusa colgante** | `assets/models/objects/{roller_coaster,coaster_train}/`, `coaster_colormap.png` y `assets/sources/roller_coaster.blend` | Circuito vertical y tren animado alrededor de Kirby | Piezas de Coaster Kit 1.0 por Kenney, licencia CC0; ensambladas, escaladas y exportadas por Juanda |
-| **Luna Homero** | `assets/models/homer/homero.obj` / `homero.mtl` | Cuerpo celeste compuesto satelital (5 submallas multi-material) que orbita el planeta dona | Modelo 3D exportado desde Blender con materiales para piel, ojos, camisa, boca y pelo |
-| **Planeta Terrestre** | `assets/models/rocky/rocky.obj` | Planeta biosfera verde con manchas oceánicas azules sombreado analíticamente con `EarthLikeShader` | Reutilización de malla esférica con nuevo shader procedural CPU continuo y tilt axial de 23.5° |
-| **Árboles de Superficie** | `assets/models/objects/trees/` | Robles (`Oak_Tree_Summer.obj`) y pinos (`Pine_Tree_2_Summer.obj`) distribuidos en la corteza terrestre | Modelos OBJ con materiales MTL de vegetación integrados con Espiral de Fibonacci y autoenraizamiento |
-| **Ciudad de Superficie** | `assets/models/objects/city/` | Casas (`house.obj`), edificios altos (`building.obj`) y fábricas (`factory.obj`) | Estructuras urbanas de baja poligonización con orientación perpendicular a la esfera |
-| **Música ambiental general y planetaria** | `assets/audio/music/*.ogg` | Fondo general y crossfade contextual por proximidad | `Rocky_Planet.ogg`: “Desert Travel (Loop)” por DJ CrisP, [OpenGameArt](https://opengameart.org/content/desert-travel-loop), CC0. Las demás pistas fueron aportadas por el equipo; la procedencia exacta de General, Tierra, Destruido y Dyson está pendiente de verificación. Kirby y Dona usan temporalmente música de videojuegos sin licencia de redistribución verificada y no deben distribuirse públicamente. |
+| **Nave Espacial** | `assets/models/nave.obj` | Vehículo del jugador para exploración interactiva y combate | Modelo 3D adaptado para escala de simulación (`1.0 WU`) |
+| **Naves Enemigas** | `assets/models/enemigos.obj` | Naves alienígenas hostiles de patrulla, observación y combate | Modelo 3D propio creado por el equipo para el proyecto |
+| **Sol (`Helios Tipo-II`)** | `assets/models/sun/sun.obj`, `sun.mtl` | Estrella central emisora de luz y origen de coordenadas | Malla esférica UV evaluada con `PlasmaShader` animado en CPU |
+| **Esfera de Dyson** | `assets/models/dyson/dyson.obj`, `dyson.mtl` | Megaestructura orbital rotatoria alrededor del Sol | Modelo 3D multi-submalla integrado alrededor de `Helios Tipo-II` |
+| **Planeta Terrestre (`Eden Replicado`)** | `assets/models/rocky/rocky.obj` | Planeta biosfera verde con océanos especulares y casquetes polares sombreado con `EarthLikeShader` | Reutilización de malla esférica con shader procedural CPU e inclinación axial de `23.5°` |
+| **Árboles de Superficie** | `assets/models/objects/trees/Oak_Tree_Summer.{obj,mtl}`, `Pine_Tree_2_Summer.{obj,mtl}` | Robles y pinos distribuidos sobre la corteza de `Eden Replicado` | Modelos OBJ/MTL de vegetación integrados con Espiral de Fibonacci y autoenraizamiento |
+| **Ciudad de Superficie** | `assets/models/objects/city/house.{obj,mtl}`, `building.{obj,mtl}`, `factory.{obj,mtl}` | Casas, edificios altos y fábricas distribuidos en `Eden Replicado` | Estructuras urbanas de baja poligonización orientadas perpendicularmente a la esfera |
+| **Planeta Rocoso (`Forja Basaltica`)** | `assets/models/rocky/rocky.{obj,mtl}`, `rocky.png`, `rocky_norm.png` | Planeta rocoso con textura difusa y mapa de normales en espacio tangente $TBN$ | Esfera poligonal UV con texturas PNG (albedo y normal map) |
+| **Montañas** | `assets/models/objects/mountain/Mountain_1_LOD_High.{obj,mtl}` | 6 cadenas montañosas distribuidas sobre `Forja Basaltica` | Nature Pack Low Poly (`Mountain_1_LOD_High.obj`) integrado sobre superficie curva |
+| **Planeta Destruido (`Cenotafio Cero`)** | `assets/models/destroyed/PlanetaDestruido.{obj,mtl}`, `planeta_destruido.png`, `planeta_destruido_norm.png` | Planeta natal fracturado con relieve por normal mapping | Modelo creado por Juan Daniel Ordoñez; texturas generadas con asistencia de Gemini y revisadas por el equipo |
+| **Escombros orbitales** | `assets/models/objects/escombro1/escombro1.{obj,mtl,png,_norm.png}`, `escombro2/escombro2.{obj,mtl,png,_norm.png}` | Dos variantes reutilizadas en el anillo orbital de 20 piezas de `Cenotafio Cero` | Modelos creados por Juan Daniel Ordoñez; texturas generadas con asistencia de Gemini y revisadas por el equipo |
+| **Asteroide (`Asteroide 67`)** | *Generación procedural en código* (`src/procedural/icosphere.rs`, `Mesh::deform`) | Icoesfera geodésica subdividida (subdiv. `2`) y deformada con ruido 3D (`seed = 67`) y `ProceduralRockShader` | Generado íntegramente por software en CPU sin archivo `.obj` |
+| **Planeta Kirby (`Parque kirby`)** | `assets/models/kirby_planet/{platform,thruster,kirby_body,kirby_feet,kirby_eyes,kirby_mouth}/`, `assets/sources/kirby_planet/kirby_planet.blend` | Plataforma orbital, propulsor con llama procedural y estatua compuesta por cuerpo, pies, ojos y boca | Modelado y ensamblado por Juan Daniel Ordoñez en Blender; texturas generadas con asistencia de Gemini y revisadas por el equipo |
+| **Luna estrella** | `assets/models/kirby_planet/star_moon/Star_Moon.{obj,mtl}`, `assets/sources/Star_Moon/StarMoon.blend` | Luna orbital amarilla (`1,014` triángulos) del planeta `Parque kirby` | Modelo propio creado y optimizado por Juan Daniel Ordoñez en Blender |
+| **Montaña rusa colgante** | `assets/models/objects/{roller_coaster,coaster_train}/`, `coaster_colormap.png`, `roller_coaster/LICENSE.txt`, `assets/sources/roller_coaster.blend` | Circuito vertical (`1,424` tris) y tren animado (`688` tris) alrededor de `Parque kirby` | Piezas de Coaster Kit 1.0 por Kenney, licencia CC0 1.0; ensambladas, escaladas y exportadas por Juan Daniel Ordoñez |
+| **Planeta Dona (`Anillo Glaseado`)** | `assets/models/donut/donut_8.{obj,mtl,png}`, `donut_uv.png` | Planeta toroidal lejano (`450 WU`, inclinación `30°`) con campo de fuerza visible y textura horneada | Modelo 3D toroidal de baja poligonización con textura difusa |
+| **Dulces de Superficie** | `assets/models/objects/{cake/cake_slice,cookie/cookie,ice_cream/ice_cream_cone,lollipop/lollipop}.{obj,mtl}` | Rebanadas de pastel, galletas con chispas, conos de helado y paletas en la superficie de `Anillo Glaseado` | Modelos 3D propios en formato OBJ/MTL creados para la corteza dulce |
+| **Luna `Homero`** | `assets/models/homer/homero.{obj,mtl}` | Cuerpo celeste compuesto satelital (5 submallas multi-material) que orbita `Anillo Glaseado` | Modelo 3D exportado desde Blender con materiales para piel, ojos, camisa, boca y pelo |
+| **Música ambiental general y planetaria** | `assets/audio/music/*.ogg` | Fondo general (`General.ogg`) y crossfade contextual (`Dyson_fixed.ogg`, `Tierra_Planet.ogg`, `Rocky_Planet.ogg`, `Destroyed_Planet_fixed.ogg`, `Kirby_Planet.ogg`, `Donut_Planet.ogg`) | `Rocky_Planet.ogg`: “Desert Travel (Loop)” por DJ CrisP, [OpenGameArt](https://opengameart.org/content/desert-travel-loop), CC0. Las demás pistas fueron aportadas por el equipo; la procedencia exacta de General, Tierra, Destruido y Dyson está pendiente de verificación. Kirby y Dona usan temporalmente música de videojuegos sin licencia de redistribución verificada y no deben distribuirse públicamente. |
